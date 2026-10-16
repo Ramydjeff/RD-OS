@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-fs-create"
+description = "Enables the fs_create command without any pre-configured scope."
+commands.allow = ["fs_create"]
+
+[[permission]]
+identifier = "deny-fs-create"
+description = "Denies the fs_create command without any pre-configured scope."
+commands.deny = ["fs_create"]

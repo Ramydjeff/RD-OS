@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-wsl-terminate-distro"
+description = "Enables the wsl_terminate_distro command without any pre-configured scope."
+commands.allow = ["wsl_terminate_distro"]
+
+[[permission]]
+identifier = "deny-wsl-terminate-distro"
+description = "Denies the wsl_terminate_distro command without any pre-configured scope."
+commands.deny = ["wsl_terminate_distro"]

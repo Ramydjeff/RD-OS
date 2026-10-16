@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-terminal-write-bytes"
+description = "Enables the terminal_write_bytes command without any pre-configured scope."
+commands.allow = ["terminal_write_bytes"]
+
+[[permission]]
+identifier = "deny-terminal-write-bytes"
+description = "Denies the terminal_write_bytes command without any pre-configured scope."
+commands.deny = ["terminal_write_bytes"]

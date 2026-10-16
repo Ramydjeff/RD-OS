@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-project-create"
+description = "Enables the project_create command without any pre-configured scope."
+commands.allow = ["project_create"]
+
+[[permission]]
+identifier = "deny-project-create"
+description = "Denies the project_create command without any pre-configured scope."
+commands.deny = ["project_create"]

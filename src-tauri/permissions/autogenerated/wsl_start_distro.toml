@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-wsl-start-distro"
+description = "Enables the wsl_start_distro command without any pre-configured scope."
+commands.allow = ["wsl_start_distro"]
+
+[[permission]]
+identifier = "deny-wsl-start-distro"
+description = "Denies the wsl_start_distro command without any pre-configured scope."
+commands.deny = ["wsl_start_distro"]

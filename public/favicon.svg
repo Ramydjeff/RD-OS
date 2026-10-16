@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" fill="none">
+  <rect width="200" height="200" rx="40" fill="#0C0E0B"/>
+  <defs>
+    <linearGradient id="crimson" x1="45" y1="35" x2="160" y2="165" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#EA3843" />
+      <stop offset="50%" stop-color="#D6303A" />
+      <stop offset="100%" stop-color="#B21B24" />
+    </linearGradient>
+    <linearGradient id="depth" x1="40" y1="40" x2="150" y2="170" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#6E0F16" />
+      <stop offset="100%" stop-color="#35060A" />
+    </linearGradient>
+  </defs>
+  <!-- Shadow/depth -->
+  <g transform="translate(-7, 9)">
+    <rect x="48" y="42" width="28" height="116" rx="14" fill="url(#depth)" transform="rotate(-26 48 42)" />
+    <rect x="96" y="44" width="28" height="124" rx="14" fill="url(#depth)" transform="rotate(27 96 44)" />
+  </g>
+  <!-- Front legs -->
+  <rect x="48" y="42" width="28" height="116" rx="14" fill="url(#crimson)" transform="rotate(-26 48 42)" />
+  <rect x="96" y="44" width="28" height="124" rx="14" fill="url(#crimson)" transform="rotate(27 96 44)" />
+  <!-- Center Bullseye -->
+  <circle cx="98" cy="137" r="16" stroke="#D6303A" stroke-width="5.5" fill="none" />
+  <circle cx="98" cy="137" r="6" fill="#D6303A" />
+</svg>

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-terminal-ack"
+description = "Enables the terminal_ack command without any pre-configured scope."
+commands.allow = ["terminal_ack"]
+
+[[permission]]
+identifier = "deny-terminal-ack"
+description = "Denies the terminal_ack command without any pre-configured scope."
+commands.deny = ["terminal_ack"]

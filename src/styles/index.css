@@ -1,0 +1,162 @@
+@import "tailwindcss";
+
+/* ---------------------------------------------------------------------------
+   Design tokens. Dark is the default; light overrides below. The accent is
+   used sparingly (focus, active state, primary actions).
+   --------------------------------------------------------------------------- */
+:root {
+  color-scheme: dark;
+  --bg: #0C0E0B;
+  --surface: #121613;
+  --elevated: #1A201B;
+  --line: #262E27;
+  --fg: #FFFFFF;
+  --muted: #8E9F9D;
+  --accent: #D6303A;
+  --accent-2: #D6E7F3;
+  --on-accent: #FFFFFF;
+  --danger: #E03842;
+  --warn: #F59E0B;
+  --brand-charcoal: #0C0E0B;
+  --brand-sky: #D6E7F3;
+  --brand-crimson: #D6303A;
+  --hover: rgb(214 231 243 / 0.07);
+  --active: rgb(214 48 58 / 0.16);
+  --overlay: rgb(12 14 11 / 0.75);
+  --shadow: 0 12px 32px rgb(0 0 0 / 0.65);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #F4F7FA;
+  --surface: #FFFFFF;
+  --elevated: #E8EEF3;
+  --line: #CFD9E3;
+  --fg: #0C0E0B;
+  --muted: #53626C;
+  --accent: #D6303A;
+  --accent-2: #1E6DB5;
+  --on-accent: #FFFFFF;
+  --danger: #C92631;
+  --warn: #B45309;
+  --brand-charcoal: #0C0E0B;
+  --brand-sky: #D6E7F3;
+  --brand-crimson: #D6303A;
+  --hover: rgb(12 14 11 / 0.05);
+  --active: rgb(214 48 58 / 0.12);
+  --overlay: rgb(12 14 11 / 0.35);
+  --shadow: 0 12px 32px rgb(12 14 11 / 0.14);
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-elevated: var(--elevated);
+  --color-line: var(--line);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent2: var(--accent-2);
+  --color-onaccent: var(--on-accent);
+  --color-danger: var(--danger);
+  --color-warn: var(--warn);
+  --color-hover: var(--hover);
+  --color-active: var(--active);
+  --color-brand-charcoal: var(--brand-charcoal);
+  --color-brand-sky: var(--brand-sky);
+  --color-brand-crimson: var(--brand-crimson);
+  --font-sans: "Inter", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "Cascadia Code", "Cascadia Mono", Consolas, monospace;
+  --radius-sm: 5px;
+  --radius-md: 8px;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.4;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+/* Text that people copy stays selectable. */
+.selectable,
+input,
+textarea {
+  user-select: text;
+}
+
+*:focus {
+  outline: none;
+}
+*:focus-visible {
+  outline: 2px solid var(--accent-2);
+  outline-offset: -1px;
+  border-radius: 3px;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+/* Thin, quiet scrollbars. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: 6px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+  background-clip: padding-box;
+  border: 2px solid transparent;
+}
+
+/* xterm fills its pane; the viewport scrollbar picks up the tokens above. */
+.xterm {
+  height: 100%;
+  padding: 4px 0 0 8px;
+}
+.xterm .xterm-viewport {
+  background-color: transparent !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.fade-in {
+  animation: fade-in 120ms ease-out;
+}

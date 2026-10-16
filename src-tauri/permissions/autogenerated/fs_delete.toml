@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-fs-delete"
+description = "Enables the fs_delete command without any pre-configured scope."
+commands.allow = ["fs_delete"]
+
+[[permission]]
+identifier = "deny-fs-delete"
+description = "Denies the fs_delete command without any pre-configured scope."
+commands.deny = ["fs_delete"]

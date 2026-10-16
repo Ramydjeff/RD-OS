@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-terminal-busy-check"
+description = "Enables the terminal_busy_check command without any pre-configured scope."
+commands.allow = ["terminal_busy_check"]
+
+[[permission]]
+identifier = "deny-terminal-busy-check"
+description = "Denies the terminal_busy_check command without any pre-configured scope."
+commands.deny = ["terminal_busy_check"]

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-monitor-sample-wsl"
+description = "Enables the monitor_sample_wsl command without any pre-configured scope."
+commands.allow = ["monitor_sample_wsl"]
+
+[[permission]]
+identifier = "deny-monitor-sample-wsl"
+description = "Denies the monitor_sample_wsl command without any pre-configured scope."
+commands.deny = ["monitor_sample_wsl"]
