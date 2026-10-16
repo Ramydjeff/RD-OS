@@ -1,37 +1,27 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronLeft,
   ChevronRight,
   Code2,
   Copy,
+  FileCode2,
+  FileUp,
   GitFork,
   Pause,
   Play,
   RotateCcw,
+  Sparkles,
   TerminalSquare,
+  Upload,
+  X,
 } from "lucide-react";
 import { ProcessTreeGraph, type SimulatedProcess } from "@/components/processes/ProcessTreeGraph";
+import { analyzeAndSimulateCCode, type Scenario } from "@/components/processes/cProcessEngine";
 import { Button } from "@/components/ui/Button";
+import { Modal } from "@/components/ui/Modal";
 import { openTerminal } from "@/features/terminalActions";
 import { toast } from "@/store/ui";
 import { cn } from "@/lib/cn";
-
-interface SimStep {
-  stepIndex: number;
-  title: string;
-  explanation: string;
-  activePid: number;
-  line: number;
-  processes: Record<number, SimulatedProcess>;
-  outputLine?: string;
-}
-
-interface Scenario {
-  id: string;
-  title: string;
-  code: string;
-  steps: SimStep[];
-}
 
 const USER_CODE = `#include <stdio.h>
 #include <stdlib.h>
@@ -651,15 +641,89 @@ int main() {
 
 const DEFAULT_SCENARIO = SCENARIOS[0]!;
 
+const TEMPLATES = [
+  {
+    name: "Exemple TD (2 forks)",
+    desc: "2 forks avec fonctions p1(), p2() et p()",
+    code: USER_CODE,
+  },
+  {
+    name: "sleep() & wait()",
+    desc: "Fork, sleep(2), exit et wait(NULL) père",
+    code: `#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/wait.h>
+
+int main() {
+    printf("[Pere %d] Demarrage du processus principal\\n", getpid());
+    int pid = fork();
+    if (pid == 0) {
+        printf("[Fils %d] Je travaille pendant 2 secondes (PPID=%d)\\n", getpid(), getppid());
+        sleep(2);
+        printf("[Fils %d] Travail termine, j'appelle exit(0)\\n", getpid());
+        exit(0);
+    } else {
+        printf("[Pere %d] Fils cree avec succes (%d). En attente...\\n", getpid(), pid);
+        wait(NULL);
+        printf("[Pere %d] Le fils est termine, fin du pere.\\n", getpid());
+    }
+    return 0;
+}`,
+  },
+  {
+    name: "Double fork en cascade",
+    desc: "Création de 2 processus distincts avec wait",
+    code: `#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/wait.h>
+
+void f1() {
+    printf("Fils 1 (PID: %d)\\n", getpid());
+    exit(0);
+}
+
+void f2() {
+    printf("Fils 2 (PID: %d)\\n", getpid());
+    exit(0);
+}
+
+int main() {
+    printf("Debut Pere (PID: %d)\\n", getpid());
+    int id1 = fork();
+    if (id1 == 0) f1();
+    int id2 = fork();
+    if (id2 == 0) f2();
+    wait(NULL);
+    wait(NULL);
+    printf("Pere termine\\n");
+    return 0;
+}`,
+  },
+];
+
 export function ProcessSimulator() {
+  const [customScenarios, setCustomScenarios] = useState<Scenario[]>([]);
   const [selectedScenarioId, setSelectedScenarioId] = useState<string>(DEFAULT_SCENARIO.id);
   const [currentStepIdx, setCurrentStepIdx] = useState<number>(0);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [selectedPid, setSelectedPid] = useState<number | null>(null);
 
+  // Custom C file upload / editor state
+  const [isEditorOpen, setIsEditorOpen] = useState(false);
+  const [editorCode, setEditorCode] = useState(USER_CODE);
+  const [isDragging, setIsDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const allScenarios = useMemo(
+    () => [...customScenarios, ...SCENARIOS],
+    [customScenarios],
+  );
+
   const scenario = useMemo(
-    () => SCENARIOS.find((s) => s.id === selectedScenarioId) ?? DEFAULT_SCENARIO,
-    [selectedScenarioId],
+    () => allScenarios.find((s) => s.id === selectedScenarioId) ?? allScenarios[0] ?? DEFAULT_SCENARIO,
+    [allScenarios, selectedScenarioId],
   );
 
   const currentStep = scenario.steps[currentStepIdx] ?? scenario.steps[0]!;
@@ -684,6 +748,66 @@ export function ProcessSimulator() {
     setCurrentStepIdx(0);
     setIsPlaying(false);
     setSelectedPid(null);
+  };
+
+  const loadCustomCode = (code: string, fileName: string) => {
+    try {
+      const generated = analyzeAndSimulateCCode(code, fileName);
+      setCustomScenarios((prev) => {
+        const filtered = prev.filter((s) => s.fileName !== fileName);
+        return [generated, ...filtered];
+      });
+      setSelectedScenarioId(generated.id);
+      setCurrentStepIdx(0);
+      setIsPlaying(false);
+      setSelectedPid(null);
+      toast(
+        "success",
+        `Fichier "${fileName}" chargé avec succès (${generated.steps.length} étapes de déroulement générées).`,
+      );
+    } catch {
+      toast("error", "Impossible de simuler ce code C.");
+    }
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target?.result as string;
+      if (text) {
+        loadCustomCode(text, file.name);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target?.result as string;
+      if (text) {
+        loadCustomCode(text, file.name);
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const handleRemoveCustomScenario = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setCustomScenarios((prev) => prev.filter((s) => s.id !== id));
+    if (selectedScenarioId === id) {
+      setSelectedScenarioId(DEFAULT_SCENARIO.id);
+      setCurrentStepIdx(0);
+      setIsPlaying(false);
+      setSelectedPid(null);
+    }
   };
 
   const stdoutLines = useMemo(() => {
@@ -718,32 +842,98 @@ export function ProcessSimulator() {
   };
 
   return (
-    <div className="space-y-4">
+    <div
+      className="space-y-4 relative"
+      onDragOver={(e) => {
+        e.preventDefault();
+        setIsDragging(true);
+      }}
+      onDragLeave={() => setIsDragging(false)}
+      onDrop={handleDrop}
+    >
+      {/* Hidden file input for native file browsing */}
+      <input
+        type="file"
+        ref={fileInputRef}
+        accept=".c,.h,.cpp,.txt"
+        className="hidden"
+        onChange={handleFileUpload}
+      />
+
+      {/* Drag & Drop Visual Overlay */}
+      {isDragging && (
+        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-[#EA3843] bg-[#0C0E0B]/90 backdrop-blur-sm pointer-events-none">
+          <Upload size={38} className="text-[#EA3843] animate-bounce mb-2" />
+          <p className="text-sm font-semibold text-fg">Déposez votre fichier .c ici</p>
+          <p className="text-xs text-muted">Le simulateur analysera le code et affichera son déroulement</p>
+        </div>
+      )}
+
       {/* ── Compact Header & Player Toolbar ────────────────────────────── */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line/60 pb-3">
-        {/* Left: Title + Scenario pills */}
-        <div className="flex items-center gap-3">
+        {/* Left: Title + File Picker + Scenario pills */}
+        <div className="flex flex-wrap items-center gap-2.5">
           <div className="flex items-center gap-1.5 text-xs font-semibold text-fg">
             <GitFork size={15} className="text-[#D6303A]" />
             <span>Simulateur</span>
           </div>
 
-          <div className="flex items-center rounded-md border border-line bg-surface p-0.5">
-            {SCENARIOS.map((s) => (
-              <button
-                key={s.id}
-                type="button"
-                onClick={() => handleSelectScenario(s.id)}
-                className={cn(
-                  "rounded px-2.5 py-1 text-xs font-medium transition-colors",
-                  selectedScenarioId === s.id
-                    ? "bg-[#D6303A] text-white shadow-sm"
-                    : "text-muted hover:text-fg",
-                )}
-              >
-                {s.title}
-              </button>
-            ))}
+          {/* Primary Action: Pick .c file */}
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => fileInputRef.current?.click()}
+            className="bg-[#D6303A] hover:bg-[#EA3843] text-white shadow-sm font-medium text-xs px-2.5 py-1"
+            title="Choisir un fichier .c sur votre disque"
+          >
+            <FileUp size={13} className="mr-1.5" /> Choisir fichier .c
+          </Button>
+
+          {/* Secondary Action: Code Editor Modal */}
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => {
+              setEditorCode(scenario.code);
+              setIsEditorOpen(true);
+            }}
+            className="text-xs text-[#D6E7F3] border-line hover:border-accent"
+            title="Coller ou éditer du code C"
+          >
+            <FileCode2 size={13} className="mr-1.5 text-accent" /> Coller du code
+          </Button>
+
+          <span className="hidden sm:inline-block h-3.5 w-px bg-line/80 mx-0.5" />
+
+          {/* Scenarios pills (custom files + presets) */}
+          <div className="flex flex-wrap items-center rounded-md border border-line bg-surface p-0.5 gap-0.5">
+            {allScenarios.map((s) => {
+              const isSelected = selectedScenarioId === s.id;
+              return (
+                <div
+                  key={s.id}
+                  className={cn(
+                    "group flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium transition-colors cursor-pointer",
+                    isSelected
+                      ? "bg-[#D6303A] text-white shadow-sm"
+                      : "text-muted hover:text-fg hover:bg-elevated/40",
+                  )}
+                  onClick={() => handleSelectScenario(s.id)}
+                >
+                  <span className="truncate max-w-[140px]">{s.title}</span>
+                  {s.isCustom && (
+                    <button
+                      type="button"
+                      onClick={(e) => handleRemoveCustomScenario(s.id, e)}
+                      className="ml-0.5 text-white/70 hover:text-white transition-opacity"
+                      title="Fermer ce fichier"
+                    >
+                      <X size={11} />
+                    </button>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
 
@@ -756,6 +946,7 @@ export function ProcessSimulator() {
               setIsPlaying(false);
               setCurrentStepIdx((p) => Math.max(0, p - 1));
             }}
+            title="Étape précédente"
           >
             <ChevronLeft size={13} />
           </Button>
@@ -780,6 +971,7 @@ export function ProcessSimulator() {
               setIsPlaying(false);
               setCurrentStepIdx((p) => Math.min(maxStep, p + 1));
             }}
+            title="Étape suivante"
           >
             <ChevronRight size={13} />
           </Button>
@@ -832,7 +1024,14 @@ export function ProcessSimulator() {
             <span className="flex items-center gap-1.5 text-fg">
               <GitFork size={13} className="text-[#D6303A]" /> Arbre des Processus (PID Tree)
             </span>
-            <span className="text-[10px] text-muted">Ligne {currentStep.line}</span>
+            <div className="flex items-center gap-2 text-[10px] text-muted">
+              {scenario.isCustom && (
+                <span className="text-accent bg-accent/15 px-1.5 py-0.5 rounded font-mono">
+                  Fichier C analysé
+                </span>
+              )}
+              <span>Ligne {currentStep.line}</span>
+            </div>
           </div>
 
           <div className="flex-1 flex items-center justify-center p-2 bg-[#0C0E0B]/50">
@@ -850,16 +1049,38 @@ export function ProcessSimulator() {
           {/* C Code snippet */}
           <div className="flex flex-col rounded-lg border border-line bg-surface overflow-hidden">
             <div className="flex items-center justify-between border-b border-line bg-elevated/40 px-3 py-1.5 text-xs text-muted">
-              <span className="flex items-center gap-1 text-fg font-medium">
-                <Code2 size={13} className="text-[#D6303A]" /> Code C
+              <span className="flex items-center gap-1.5 text-fg font-medium truncate">
+                <Code2 size={13} className="text-[#D6303A] shrink-0" />
+                <span className="truncate">{scenario.fileName ?? scenario.title}</span>
               </span>
-              <button
-                type="button"
-                onClick={copyCode}
-                className="text-[10px] hover:text-fg transition-colors flex items-center gap-1"
-              >
-                <Copy size={11} /> Copier
-              </button>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="text-[10px] hover:text-fg transition-colors flex items-center gap-1 px-1.5 py-0.5 rounded border border-line/60 hover:border-accent"
+                  title="Choisir un autre fichier .c"
+                >
+                  <FileUp size={10} /> Parcourir...
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditorCode(scenario.code);
+                    setIsEditorOpen(true);
+                  }}
+                  className="text-[10px] hover:text-fg transition-colors flex items-center gap-1 px-1.5 py-0.5 rounded border border-line/60 hover:border-accent"
+                  title="Modifier le code"
+                >
+                  <FileCode2 size={10} /> Modifier
+                </button>
+                <button
+                  type="button"
+                  onClick={copyCode}
+                  className="text-[10px] hover:text-fg transition-colors flex items-center gap-1 px-1.5 py-0.5 rounded border border-line/60 hover:border-accent"
+                >
+                  <Copy size={10} /> Copier
+                </button>
+              </div>
             </div>
 
             <div className="max-h-56 overflow-y-auto bg-[#0C0E0B] p-2 font-mono text-[11px] leading-4 text-muted">
@@ -909,6 +1130,74 @@ export function ProcessSimulator() {
           </div>
         </div>
       </div>
+
+      {/* ── Modal: C Code Editor / Paste ───────────────────────────────── */}
+      {isEditorOpen && (
+        <Modal
+          title="Éditer ou coller du Code C"
+          onClose={() => setIsEditorOpen(false)}
+          width="max-w-2xl"
+          footer={
+            <div className="flex items-center justify-between w-full">
+              <Button variant="ghost" size="sm" onClick={() => setIsEditorOpen(false)}>
+                Annuler
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => {
+                  loadCustomCode(editorCode, "code_personnalise.c");
+                  setIsEditorOpen(false);
+                }}
+                className="bg-[#D6303A] hover:bg-[#EA3843] text-white shadow-sm"
+              >
+                <Sparkles size={13} className="mr-1.5" /> Lancer la Simulation
+              </Button>
+            </div>
+          }
+        >
+          <div className="space-y-3">
+            <p className="text-xs text-muted">
+              Collez votre propre code C ou modifiez-le. Le moteur analysera vos appels à{" "}
+              <code className="text-[#EA3843]">fork()</code>,{" "}
+              <code className="text-[#EA3843]">wait()</code>,{" "}
+              <code className="text-[#EA3843]">sleep()</code>,{" "}
+              <code className="text-[#EA3843]">exit()</code> et{" "}
+              <code className="text-[#EA3843]">printf()</code> pour simuler son déroulement complet.
+            </p>
+
+            {/* Quick Templates */}
+            <div className="space-y-1">
+              <span className="text-[11px] font-medium text-muted">Modèles rapides :</span>
+              <div className="flex flex-wrap gap-1.5">
+                {TEMPLATES.map((tmpl) => (
+                  <button
+                    key={tmpl.name}
+                    type="button"
+                    onClick={() => setEditorCode(tmpl.code)}
+                    className="rounded border border-line bg-surface/80 px-2 py-1 text-[11px] text-[#D6E7F3] hover:border-accent hover:text-white transition-colors"
+                  >
+                    {tmpl.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Textarea */}
+            <div className="relative rounded-lg border border-line bg-[#0C0E0B] p-2">
+              <textarea
+                value={editorCode}
+                onChange={(e) => setEditorCode(e.target.value)}
+                rows={14}
+                className="w-full resize-y bg-transparent font-mono text-xs text-[#D6E7F3] outline-none leading-5"
+                placeholder="#include <stdio.h>&#10;#include <unistd.h>&#10;int main() { ... }"
+                spellCheck={false}
+              />
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
+
