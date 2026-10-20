@@ -62,20 +62,20 @@ export function TerminalPane({ terminalId, paneId, tabId, tabActive, showFocus }
   const ended = meta?.state === "exited" || meta?.state === "failed";
 
   return (
-    <div className={cn("relative h-full w-full bg-bg", showFocus && "border-t-2", showFocus && (isActivePane ? "border-accent/70" : "border-transparent"))}>
+    <div className={cn("relative h-full w-full bg-term", showFocus && "border-t-2", showFocus && (isActivePane ? "border-accent/70" : "border-transparent"))}>
       <div ref={hostRef} className="absolute inset-0" />
       {searchOpen && <SearchBar terminalId={terminalId} />}
       {ended && (
-        <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-3 border-t border-line bg-elevated/95 px-3 py-1.5">
+        <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-3 border-t border-line bg-elevated/95 px-4 py-2">
           <span className="selectable min-w-0 truncate text-xs text-muted">
             {meta?.state === "failed"
-              ? (meta.error ?? "The terminal could not be started.")
+              ? (meta.error ?? "Le terminal n'a pas pu démarrer.")
               : meta?.exitCode == null
-                ? "Session terminated."
-                : `Session ended with exit code ${meta.exitCode}.`}
+                ? "Session arrêtée."
+                : `Session terminée (code de sortie ${meta.exitCode}).`}
           </span>
           <Button size="sm" variant="primary" onClick={() => void restartTerminal(terminalId)}>
-            <RotateCcw size={12} /> Restart
+            <RotateCcw size={12} /> Redémarrer
           </Button>
         </div>
       )}

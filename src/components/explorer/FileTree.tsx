@@ -1,29 +1,42 @@
-import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, forwardRef } from "react";
+// Project file tree. Only the visible rows are rendered, so folders with
+// thousands of entries scroll smoothly. Rename and creation happen in place,
+// the expanded folders survive view switches, and the tree refreshes itself
+// when the window gets the focus back.
+
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import {
-  ChevronDown,
   ChevronRight,
-  File as FileIcon,
+  ClipboardCopy,
+  ClipboardPaste,
+  Cpu,
+  ExternalLink,
   FilePlus,
-  Folder,
-  FolderOpen,
+  FileText,
   FolderPlus,
   Link2,
-  Pencil,
-  TerminalSquare,
-  Trash2,
   LoaderCircle,
-  ClipboardPaste,
+  Pencil,
+  SquareTerminal,
+  Trash2,
 } from "lucide-react";
+import { FileIcon, FolderIcon } from "@/components/explorer/fileIcons";
 import { ContextMenu, type MenuItem } from "@/components/ui/ContextMenu";
 import { insertIntoActive, openTerminal, reportError } from "@/features/terminalActions";
 import { cn } from "@/lib/cn";
 import { errorMessage } from "@/lib/errors";
 import { ipc } from "@/lib/ipc";
-import { baseName, childLocation, joinRel, parentRel, validateEntryName } from "@/lib/paths";
+import { baseName, childLocation, hostPathOf, joinRel, locationKey, parentRel, validateEntryName } from "@/lib/paths";
+import { useEditor } from "@/store/editor";
 import { useSettings } from "@/store/settings";
-import { confirmDialog, promptDialog, toast } from "@/store/ui";
+import { simulateSource } from "@/store/processesView";
+import { confirmDialog, toast } from "@/store/ui";
 import { useWorkspace } from "@/store/workspace";
 import type { EntryKind, FsEntry, Location } from "@/types/ipc";
+
+const ROW_H = 24;
+const INDENT = 12;
+const OVERSCAN = 12;
 
 interface DirState {
   status: "loading" | "ready" | "error";
@@ -39,19 +52,25 @@ interface Row {
   depth: number;
   symlink: boolean;
   hidden: boolean;
-  /** Pseudo-rows for loading/error/empty states under a directory. */
-  note?: string;
+  size: number;
+  /** Pseudo-rows: messages under a folder, or the inline "new item" input. */
+  note?: "error" | "empty" | "more" | "create";
 }
+
+type Editing = { mode: "rename"; rel: string } | { mode: "create"; parent: string; kind: "file" | "dir" } | null;
 
 export interface FileTreeHandle {
   refresh: () => void;
   newEntry: (kind: "file" | "dir") => void;
+  collapseAll: () => void;
+  focus: () => void;
 }
 
 interface Props {
   root: Location;
   showHidden: boolean;
-  onSelectionChange?: (sel: { rel: string; kind: EntryKind } | null) => void;
+  /** Case-insensitive filter over the folders already loaded. */
+  filter: string;
 }
 
 /** Wraps a path for safe insertion into a POSIX shell command line. */
@@ -59,19 +78,57 @@ export function shellQuote(s: string): string {
   return `'${s.replaceAll("'", `'\\''`)}'`;
 }
 
-export const FileTree = forwardRef<FileTreeHandle, Props>(function FileTree({ root, showHidden, onSelectionChange }, ref) {
-  const [dirs, setDirs] = useState<Record<string, DirState>>({});
-  const [expanded, setExpanded] = useState<Set<string>>(() => new Set([""]));
-  const [selected, setSelected] = useState<{ rel: string; kind: EntryKind } | null>(null);
-  const [menu, setMenu] = useState<{ x: number; y: number; rel: string; kind: EntryKind } | null>(null);
-  const confirmDelete = useSettings((s) => s.settings.confirmations.deleteEntries);
-  const treeRef = useRef<HTMLDivElement>(null);
-  const generation = useRef(0);
+/** Tree state per project, so switching views or projects is instant and keeps the context. */
+interface Memory {
+  expanded: Set<string>;
+  selected: string | null;
+  scrollTop: number;
+  dirs: Record<string, DirState>;
+  showHidden: boolean;
+}
+const memory = new Map<string, Memory>();
+const MEMORY_MAX = 8;
 
+function remember(key: string, m: Memory) {
+  memory.delete(key);
+  memory.set(key, m);
+  if (memory.size > MEMORY_MAX) memory.delete(memory.keys().next().value!);
+}
+
+function copy(text: string, what: string) {
+  void navigator.clipboard?.writeText(text).then(
+    () => toast("success", `${what} copié.`),
+    () => toast("error", "Le presse-papiers n'est pas accessible."),
+  );
+}
+
+export const FileTree = forwardRef<FileTreeHandle, Props>(function FileTree({ root, showHidden, filter }, ref) {
+  const rootKey = locationKey(root);
+  const [remembered] = useState(() => memory.get(rootKey));
+  const [dirs, setDirs] = useState<Record<string, DirState>>(() =>
+    remembered && remembered.showHidden === showHidden ? remembered.dirs : {},
+  );
+  const [expanded, setExpanded] = useState<Set<string>>(() => remembered?.expanded ?? new Set([""]));
+  const [selected, setSelected] = useState<string | null>(remembered?.selected ?? null);
+  const [editing, setEditing] = useState<Editing>(null);
+  const [menu, setMenu] = useState<{ x: number; y: number; rel: string; kind: EntryKind } | null>(null);
+  const [view, setView] = useState({ top: remembered?.scrollTop ?? 0, height: 400 });
+  const confirmDelete = useSettings((s) => s.settings.confirmations.deleteEntries);
+  // The key only (not the file object, which changes on every keystroke in the editor).
+  const activeKey = useEditor((s) => s.activeKey);
+  const boxRef = useRef<HTMLDivElement>(null);
+  const generation = useRef(0);
+  const expandedRef = useRef(expanded);
+  expandedRef.current = expanded;
+  const typeahead = useRef({ text: "", at: 0 });
+  /** Root + hidden flag the current `dirs` were listed for. */
+  const listedFor = useRef(Object.keys(dirs).length > 0 ? `${rootKey}|${showHidden}` : null);
+
+  /** `quiet`: a background refresh keeps showing the current entries until the new ones arrive. */
   const load = useCallback(
-    async (rel: string) => {
+    async (rel: string, quiet = false) => {
       const gen = generation.current;
-      setDirs((d) => ({ ...d, [rel]: { status: "loading", entries: d[rel]?.entries ?? [] } }));
+      setDirs((d) => (quiet && d[rel]?.status === "ready" ? d : { ...d, [rel]: { status: "loading", entries: d[rel]?.entries ?? [] } }));
       try {
         const listing = await ipc.fsListDir(root, rel, showHidden);
         if (gen !== generation.current) return;
@@ -84,55 +141,103 @@ export const FileTree = forwardRef<FileTreeHandle, Props>(function FileTree({ ro
     [root, showHidden],
   );
 
-  // New root or hidden-files toggle: start over.
-  useEffect(() => {
-    generation.current += 1;
-    setDirs({});
-    setExpanded(new Set([""]));
-    setSelected(null);
-    void load("");
+  const refresh = useCallback(() => {
+    for (const rel of expandedRef.current) void load(rel, true);
   }, [load]);
 
-  useEffect(() => onSelectionChange?.(selected), [selected, onSelectionChange]);
+  // New root or hidden-files toggle: reload what was open (the expansion is kept).
+  // A tree restored from memory is shown at once and refreshed in the background.
+  useEffect(() => {
+    generation.current += 1;
+    const sig = `${rootKey}|${showHidden}`;
+    const same = listedFor.current === sig;
+    listedFor.current = sig;
+    if (!same) setDirs({});
+    for (const rel of expandedRef.current) void load(rel, same);
+  }, [load, rootKey, showHidden]);
 
-  const refresh = useCallback(() => {
-    for (const rel of expanded) void load(rel);
-  }, [expanded, load]);
+  // Remember the state for the next mount, and restore the scroll position.
+  useEffect(() => {
+    remember(rootKey, { expanded, selected, scrollTop: view.top, dirs, showHidden });
+  }, [rootKey, expanded, selected, view.top, dirs, showHidden]);
+  useLayoutEffect(() => {
+    if (boxRef.current && remembered) boxRef.current.scrollTop = remembered.scrollTop;
+    // Only on mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Files may change outside the app (terminal, git...): refresh on focus, at most every 3 s.
+  useEffect(() => {
+    let last = Date.now();
+    const onFocus = () => {
+      if (Date.now() - last < 3000) return;
+      last = Date.now();
+      refresh();
+    };
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [refresh]);
+
+  useLayoutEffect(() => {
+    const box = boxRef.current;
+    if (!box) return;
+    const ro = new ResizeObserver(() => setView((v) => ({ ...v, height: box.clientHeight })));
+    ro.observe(box);
+    return () => ro.disconnect();
+  }, []);
+
+  const query = filter.trim().toLowerCase();
 
   const rows = useMemo(() => {
     const out: Row[] = [];
+    const base = { symlink: false, hidden: false, size: 0, kind: "other" as EntryKind };
+    // While filtering: does this folder (as loaded) contain a match?
+    const matchMemo = new Map<string, boolean>();
+    const hasMatch = (rel: string): boolean => {
+      const cached = matchMemo.get(rel);
+      if (cached !== undefined) return cached;
+      const st = dirs[rel];
+      const found = !!st?.entries.some((e) => e.name.toLowerCase().includes(query) || (e.kind === "dir" && hasMatch(joinRel(rel, e.name))));
+      matchMemo.set(rel, found);
+      return found;
+    };
     const walk = (rel: string, depth: number) => {
       const state = dirs[rel];
+      if (editing?.mode === "create" && editing.parent === rel) {
+        out.push({ ...base, rel: `${rel}/\u0000create`, name: "", kind: editing.kind, depth, note: "create" });
+      }
       if (!state) return;
-      if (state.status === "loading" && state.entries.length === 0) {
-        out.push({ rel: `${rel}/\u0000loading`, name: "Loading...", kind: "other", depth, symlink: false, hidden: false, note: "loading" });
-        return;
-      }
       if (state.status === "error") {
-        out.push({ rel: `${rel}/\u0000error`, name: state.error ?? "Could not read this folder.", kind: "other", depth, symlink: false, hidden: false, note: "error" });
+        out.push({ ...base, rel: `${rel}/\u0000error`, name: state.error ?? "Dossier illisible.", depth, note: "error" });
         return;
       }
-      if (state.status === "ready" && state.entries.length === 0 && rel !== "") {
-        out.push({ rel: `${rel}/\u0000empty`, name: "Empty folder", kind: "other", depth, symlink: false, hidden: false, note: "empty" });
+      if (state.status === "ready" && state.entries.length === 0 && rel !== "" && !query) {
+        out.push({ ...base, rel: `${rel}/\u0000empty`, name: "Dossier vide", depth, note: "empty" });
       }
       for (const e of state.entries) {
         const child = joinRel(rel, e.name);
-        out.push({ rel: child, name: e.name, kind: e.kind, depth, symlink: e.symlink, hidden: e.hidden });
-        if (e.kind === "dir" && expanded.has(child)) walk(child, depth + 1);
+        const isDir = e.kind === "dir";
+        if (query && !e.name.toLowerCase().includes(query) && !(isDir && hasMatch(child))) continue;
+        out.push({ rel: child, name: e.name, kind: e.kind, depth, symlink: e.symlink, hidden: e.hidden, size: e.size });
+        if (isDir && (query ? hasMatch(child) : expanded.has(child))) walk(child, depth + 1);
       }
       if (state.truncated) {
-        out.push({ rel: `${rel}/\u0000more`, name: "Only the first entries are shown.", kind: "other", depth, symlink: false, hidden: false, note: "empty" });
+        out.push({ ...base, rel: `${rel}/\u0000more`, name: "Seules les 5 000 premières entrées sont affichées.", depth, note: "more" });
       }
     };
     walk("", 0);
     return out;
-  }, [dirs, expanded]);
+  }, [dirs, expanded, editing, query]);
+
+  const real = useMemo(() => rows.filter((r) => !r.note), [rows]);
 
   const toggle = useCallback(
-    (rel: string) => {
+    (rel: string, open?: boolean) => {
       setExpanded((prev) => {
+        const isOpen = prev.has(rel);
+        if (open === isOpen) return prev;
         const next = new Set(prev);
-        if (next.has(rel)) next.delete(rel);
+        if (isOpen) next.delete(rel);
         else {
           next.add(rel);
           void load(rel);
@@ -143,54 +248,95 @@ export const FileTree = forwardRef<FileTreeHandle, Props>(function FileTree({ ro
     [load],
   );
 
-  /** Directory that new items go into: the selection if it is a folder, else its parent. */
+  const rowsRef = useRef(rows);
+  rowsRef.current = rows;
+
+  /** Selects a row and scrolls it into view once it is rendered (it may have just been created). */
+  const select = useCallback((rel: string | null) => {
+    setSelected(rel);
+    if (rel === null) return;
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        const box = boxRef.current;
+        const idx = rowsRef.current.findIndex((r) => r.rel === rel);
+        if (!box || idx < 0) return;
+        const top = idx * ROW_H + 4;
+        if (top < box.scrollTop) box.scrollTop = top - 4;
+        else if (top + ROW_H > box.scrollTop + box.clientHeight) box.scrollTop = top + ROW_H - box.clientHeight + 4;
+      }),
+    );
+  }, []);
+
+  /** Folder that new items go into: the selection if it is a folder, else its parent. */
   const targetDir = useCallback((): string => {
     if (!selected) return "";
-    return selected.kind === "dir" ? selected.rel : parentRel(selected.rel);
-  }, [selected]);
+    const row = real.find((r) => r.rel === selected);
+    return row?.kind === "dir" ? selected : parentRel(selected);
+  }, [selected, real]);
 
-  const createEntry = useCallback(
-    async (kind: "file" | "dir", parent = targetDir()) => {
-      const name = await promptDialog({
-        title: kind === "file" ? "New file" : "New folder",
-        label: `Name (in ${parent || "project root"})`,
-        validate: validateEntryName,
-        confirmLabel: "Create",
-      });
-      if (!name) return;
-      try {
-        await ipc.fsCreate(root, parent, name.trim(), kind);
-        setExpanded((p) => new Set(p).add(parent));
-        await load(parent);
-        setSelected({ rel: joinRel(parent, name.trim()), kind: kind === "dir" ? "dir" : "file" });
-      } catch (e) {
-        void reportError("Could not create it", e);
-      }
+  const startCreate = useCallback(
+    (kind: "file" | "dir", parent = targetDir()) => {
+      if (parent && !expandedRef.current.has(parent)) toggle(parent, true);
+      setEditing({ mode: "create", parent, kind });
     },
-    [root, load, targetDir],
+    [targetDir, toggle],
   );
 
-  const renameEntry = useCallback(
-    async (rel: string) => {
-      const oldName = baseName(rel);
-      const name = await promptDialog({
-        title: "Rename",
-        label: "New name",
-        initial: oldName,
-        validate: (v) => (v === oldName ? "Choose a different name." : validateEntryName(v)),
-        confirmLabel: "Rename",
-      });
-      if (!name) return;
+  const openFile = useCallback(
+    (row: Row, pinned: boolean) => {
+      void useEditor.getState().open(root, row.rel, { preview: !pinned, size: row.size });
+    },
+    [root],
+  );
+
+  const commitEdit = useCallback(
+    async (value: string) => {
+      const e = editing;
+      if (!e) return;
+      const name = value.trim();
+      if (e.mode === "rename") {
+        const oldName = baseName(e.rel);
+        if (!name || name === oldName || validateEntryName(name)) {
+          setEditing(null);
+          return;
+        }
+        try {
+          await ipc.fsRename(root, e.rel, name);
+          const parent = parentRel(e.rel);
+          const newRel = joinRel(parent, name);
+          setExpanded((prev) => {
+            const next = new Set<string>();
+            for (const r of prev) next.add(r === e.rel || r.startsWith(`${e.rel}/`) ? newRel + r.slice(e.rel.length) : r);
+            return next;
+          });
+          useEditor.getState().pathRenamed(root, e.rel, newRel);
+          setEditing(null);
+          await load(parent);
+          select(newRel);
+        } catch (err) {
+          setEditing(null);
+          void reportError("Impossible de renommer", err);
+        }
+        return;
+      }
+      if (!name || validateEntryName(name)) {
+        setEditing(null);
+        return;
+      }
       try {
-        await ipc.fsRename(root, rel, name.trim());
-        const parent = parentRel(rel);
-        await load(parent);
-        setSelected((s) => (s && s.rel === rel ? { rel: joinRel(parent, name.trim()), kind: s.kind } : s));
-      } catch (e) {
-        void reportError("Could not rename it", e);
+        await ipc.fsCreate(root, e.parent, name, e.kind);
+        setEditing(null);
+        if (e.parent) toggle(e.parent, true);
+        await load(e.parent);
+        const rel = joinRel(e.parent, name);
+        select(rel);
+        if (e.kind === "file") void useEditor.getState().open(root, rel, { preview: false });
+      } catch (err) {
+        setEditing(null);
+        void reportError("Impossible de créer l'élément", err);
       }
     },
-    [root, load],
+    [editing, root, load, toggle, select],
   );
 
   const deleteEntry = useCallback(
@@ -198,24 +344,27 @@ export const FileTree = forwardRef<FileTreeHandle, Props>(function FileTree({ ro
       const name = baseName(rel);
       if (confirmDelete) {
         const ok = await confirmDialog({
-          title: kind === "dir" ? "Delete folder?" : "Delete file?",
+          title: kind === "dir" ? "Supprimer ce dossier ?" : "Supprimer ce fichier ?",
           message:
             kind === "dir"
-              ? `"${name}" and everything inside it will be permanently deleted. This cannot be undone.`
-              : `"${name}" will be permanently deleted. This cannot be undone.`,
+              ? `« ${name} » et tout son contenu seront supprimés définitivement. Cette action est irréversible.`
+              : `« ${name} » sera supprimé définitivement. Cette action est irréversible.`,
           detail: rel,
-          confirmLabel: "Delete permanently",
+          confirmLabel: "Supprimer définitivement",
           danger: true,
         });
         if (!ok) return;
       }
       try {
         await ipc.fsDelete(root, rel);
-        toast("success", `Deleted ${name}.`);
-        setSelected(null);
-        await load(parentRel(rel));
+        useEditor.getState().pathDeleted(root, rel);
+        toast("success", `« ${name} » supprimé.`);
+        const parent = parentRel(rel);
+        setExpanded((prev) => new Set([...prev].filter((r) => r !== rel && !r.startsWith(`${rel}/`))));
+        setSelected(parent || null);
+        await load(parent);
       } catch (e) {
-        void reportError("Could not delete it", e);
+        void reportError("Impossible de supprimer", e);
       }
     },
     [root, load, confirmDelete],
@@ -231,172 +380,378 @@ export const FileTree = forwardRef<FileTreeHandle, Props>(function FileTree({ ro
         } else {
           // Windows path: let the distribution's own wslpath translate it.
           const distro = useWorkspace.getState().selectedDistro;
-          if (!distro) throw new Error("Choose a distribution first (Environments view).");
+          if (!distro) throw new Error("Choisissez d'abord une distribution (vue Environnements).");
           linuxPath = await ipc.wslToLinuxPath(distro, loc.path);
         }
         insertIntoActive(shellQuote(linuxPath) + " ");
       } catch (e) {
-        void reportError("Could not insert the path", e);
+        void reportError("Impossible d'insérer le chemin", e);
       }
     },
     [root],
   );
 
-  useImperativeHandle(ref, () => ({ refresh, newEntry: (kind) => void createEntry(kind) }), [refresh, createEntry]);
+  const simulate = useCallback(
+    async (rel: string) => {
+      try {
+        const code = await ipc.fsReadFile(root, rel);
+        await simulateSource(code, baseName(rel));
+        useWorkspace.getState().setView("processes");
+      } catch (e) {
+        void reportError("Impossible de lire le fichier", e);
+      }
+    },
+    [root],
+  );
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      refresh,
+      newEntry: (kind) => startCreate(kind),
+      collapseAll: () => setExpanded(new Set([""])),
+      focus: () => boxRef.current?.focus(),
+    }),
+    [refresh, startCreate],
+  );
 
   const menuItems = useMemo((): (MenuItem | "separator")[] => {
     if (!menu) return [];
     const isDir = menu.kind === "dir";
+    const isRoot = menu.rel === "";
     const inDir = isDir ? menu.rel : parentRel(menu.rel);
-    return [
-      { id: "new-file", label: "New file...", icon: <FilePlus size={14} />, onSelect: () => void createEntry("file", inDir) },
-      { id: "new-folder", label: "New folder...", icon: <FolderPlus size={14} />, onSelect: () => void createEntry("dir", inDir) },
+    const loc = childLocation(root, menu.rel);
+    const items: (MenuItem | "separator")[] = [];
+    if (!isDir) {
+      const row = real.find((r) => r.rel === menu.rel);
+      items.push({ id: "open", label: "Ouvrir", icon: <FileText size={14} />, hint: "Entrée", onSelect: () => row && openFile(row, true) });
+      if (/\.c$/i.test(menu.rel)) {
+        items.push({ id: "simulate", label: "Simuler les processus", icon: <Cpu size={14} />, onSelect: () => void simulate(menu.rel) });
+      }
+      items.push("separator");
+    }
+    items.push(
+      { id: "new-file", label: "Nouveau fichier", icon: <FilePlus size={14} />, onSelect: () => startCreate("file", inDir) },
+      { id: "new-folder", label: "Nouveau dossier", icon: <FolderPlus size={14} />, onSelect: () => startCreate("dir", inDir) },
+      "separator",
+      { id: "copy-path", label: "Copier le chemin", icon: <ClipboardCopy size={14} />, onSelect: () => copy(loc.path, "Chemin") },
+    );
+    if (!isRoot) {
+      items.push({ id: "copy-rel", label: "Copier le chemin relatif", icon: <Link2 size={14} />, onSelect: () => copy(menu.rel, "Chemin relatif") });
+    }
+    items.push(
+      {
+        id: "reveal",
+        label: "Afficher dans l'Explorateur Windows",
+        icon: <ExternalLink size={14} />,
+        onSelect: () => void revealItemInDir(hostPathOf(loc)).catch((e) => reportError("Impossible d'ouvrir l'Explorateur", e)),
+      },
       "separator",
       {
         id: "terminal",
-        label: "Open in terminal",
-        icon: <TerminalSquare size={14} />,
+        label: "Ouvrir dans le terminal",
+        icon: <SquareTerminal size={14} />,
         onSelect: () => void openTerminal({ cwd: childLocation(root, inDir) }),
       },
-      { id: "insert", label: "Insert path in terminal", icon: <ClipboardPaste size={14} />, onSelect: () => void insertPath(menu.rel) },
-      "separator",
-      { id: "rename", label: "Rename...", icon: <Pencil size={14} />, onSelect: () => void renameEntry(menu.rel) },
-      { id: "delete", label: "Delete...", icon: <Trash2 size={14} />, danger: true, onSelect: () => void deleteEntry(menu.rel, menu.kind) },
-    ];
-  }, [menu, root, createEntry, renameEntry, deleteEntry, insertPath]);
+      { id: "insert", label: "Insérer le chemin dans le terminal", icon: <ClipboardPaste size={14} />, onSelect: () => void insertPath(menu.rel) },
+    );
+    if (!isRoot) {
+      items.push(
+        "separator",
+        { id: "rename", label: "Renommer", icon: <Pencil size={14} />, hint: "F2", onSelect: () => setEditing({ mode: "rename", rel: menu.rel }) },
+        { id: "delete", label: "Supprimer", icon: <Trash2 size={14} />, hint: "Suppr", danger: true, onSelect: () => void deleteEntry(menu.rel, menu.kind) },
+      );
+    }
+    return items;
+  }, [menu, root, real, openFile, simulate, startCreate, insertPath, deleteEntry]);
 
-  const real = rows.filter((r) => !r.note);
   function onKeyDown(e: React.KeyboardEvent) {
-    const idx = selected ? real.findIndex((r) => r.rel === selected.rel) : -1;
+    if (editing) return;
+    const idx = selected !== null ? real.findIndex((r) => r.rel === selected) : -1;
     const cur = idx >= 0 ? real[idx] : undefined;
-    const select = (r?: Row) => r && setSelected({ rel: r.rel, kind: r.kind });
+    const go = (i: number) => {
+      const r = real[Math.max(0, Math.min(real.length - 1, i))];
+      if (r) select(r.rel);
+    };
+    const page = Math.max(1, Math.floor((boxRef.current?.clientHeight ?? 300) / ROW_H) - 1);
     switch (e.key) {
       case "ArrowDown":
         e.preventDefault();
-        select(real[Math.min(real.length - 1, idx + 1)]);
-        break;
+        go(idx + 1);
+        return;
       case "ArrowUp":
         e.preventDefault();
-        select(real[Math.max(0, idx - 1)]);
-        break;
+        go(idx < 0 ? 0 : idx - 1);
+        return;
+      case "PageDown":
+        e.preventDefault();
+        go(idx + page);
+        return;
+      case "PageUp":
+        e.preventDefault();
+        go(idx - page);
+        return;
+      case "Home":
+        e.preventDefault();
+        go(0);
+        return;
+      case "End":
+        e.preventDefault();
+        go(real.length - 1);
+        return;
       case "ArrowRight":
         if (cur?.kind === "dir") {
           e.preventDefault();
-          if (!expanded.has(cur.rel)) toggle(cur.rel);
-          else select(real[idx + 1]);
+          if (!expanded.has(cur.rel) && !query) toggle(cur.rel, true);
+          else go(idx + 1);
         }
-        break;
+        return;
       case "ArrowLeft":
         if (cur) {
           e.preventDefault();
-          if (cur.kind === "dir" && expanded.has(cur.rel)) toggle(cur.rel);
-          else select(real.find((r) => r.rel === parentRel(cur.rel)));
+          if (cur.kind === "dir" && expanded.has(cur.rel) && !query) toggle(cur.rel, false);
+          else if (parentRel(cur.rel) !== cur.rel && cur.rel.includes("/")) select(parentRel(cur.rel));
         }
-        break;
+        return;
       case "Enter":
-        if (cur?.kind === "dir") {
+        if (cur) {
           e.preventDefault();
-          toggle(cur.rel);
+          if (cur.kind === "dir") toggle(cur.rel);
+          else openFile(cur, true);
         }
-        break;
+        return;
       case "F2":
         if (cur) {
           e.preventDefault();
-          void renameEntry(cur.rel);
+          setEditing({ mode: "rename", rel: cur.rel });
         }
-        break;
+        return;
       case "Delete":
         if (cur) {
           e.preventDefault();
           void deleteEntry(cur.rel, cur.kind);
         }
-        break;
+        return;
       case "ContextMenu":
       case "F10":
         if (cur && (e.key === "ContextMenu" || e.shiftKey)) {
           e.preventDefault();
-          const el = treeRef.current?.querySelector<HTMLElement>(`[data-rel="${CSS.escape(cur.rel)}"]`);
+          const el = boxRef.current?.querySelector<HTMLElement>(`[data-rel="${CSS.escape(cur.rel)}"]`);
           const r = el?.getBoundingClientRect();
           setMenu({ x: (r?.left ?? 100) + 24, y: (r?.bottom ?? 100) + 2, rel: cur.rel, kind: cur.kind });
         }
-        break;
+        return;
+    }
+    // Type-ahead: letters jump to the next entry starting with what was typed.
+    if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey && e.key !== " ") {
+      const now = Date.now();
+      const t = typeahead.current;
+      t.text = now - t.at > 700 ? e.key.toLowerCase() : t.text + e.key.toLowerCase();
+      t.at = now;
+      const start = t.text.length === 1 ? idx + 1 : Math.max(0, idx);
+      for (let k = 0; k < real.length; k++) {
+        const r = real[(start + k) % real.length]!;
+        if (r.name.toLowerCase().startsWith(t.text)) {
+          select(r.rel);
+          break;
+        }
+      }
     }
   }
 
-  const activeId = selected ? `tree-${selected.rel}` : undefined;
+  const first = Math.max(0, Math.floor(view.top / ROW_H) - OVERSCAN);
+  const last = Math.min(rows.length, Math.ceil((view.top + view.height) / ROW_H) + OVERSCAN);
+  const visible = rows.slice(first, last);
+  const activeRel = activeKey?.startsWith(`${rootKey}|`) ? activeKey.slice(rootKey.length + 1) : null;
 
   return (
     <>
       <div
-        ref={treeRef}
+        ref={boxRef}
         role="tree"
-        aria-label="Project files"
+        aria-label="Fichiers du projet"
         tabIndex={0}
-        aria-activedescendant={activeId}
+        aria-activedescendant={selected !== null ? `tree-${selected}` : undefined}
         onKeyDown={onKeyDown}
+        onScroll={(e) => {
+          const top = e.currentTarget.scrollTop;
+          setView((v) => (v.top === top ? v : { ...v, top }));
+        }}
         onContextMenu={(e) => {
           if ((e.target as HTMLElement).closest("[data-rel]")) return;
           e.preventDefault();
           setMenu({ x: e.clientX, y: e.clientY, rel: "", kind: "dir" });
         }}
-        className="min-h-0 flex-1 overflow-auto py-1 outline-none focus-visible:outline-offset-[-2px]"
+        className="min-h-0 flex-1 overflow-auto outline-none focus-visible:outline-offset-[-2px]"
       >
-        {rows.map((r) => {
-          if (r.note) {
-            return (
-              <div
-                key={r.rel}
-                style={{ paddingLeft: 8 + r.depth * 14 + 18 }}
-                className={cn("flex items-center gap-1.5 py-0.5 pr-2 text-xs", r.note === "error" ? "text-danger" : "text-muted")}
-              >
-                {r.note === "loading" && <LoaderCircle size={12} className="animate-spin" />}
-                <span className="selectable truncate">{r.name}</span>
-              </div>
-            );
-          }
-          const isDir = r.kind === "dir";
-          const isOpen = isDir && expanded.has(r.rel);
-          const isSel = selected?.rel === r.rel;
-          return (
-            <div
-              key={r.rel}
-              id={`tree-${r.rel}`}
-              data-rel={r.rel}
-              role="treeitem"
-              aria-level={r.depth + 1}
-              aria-expanded={isDir ? isOpen : undefined}
-              aria-selected={isSel}
-              style={{ paddingLeft: 8 + r.depth * 14 }}
-              onClick={() => {
-                setSelected({ rel: r.rel, kind: r.kind });
-                if (isDir) toggle(r.rel);
-              }}
-              onContextMenu={(e) => {
-                e.preventDefault();
-                setSelected({ rel: r.rel, kind: r.kind });
-                setMenu({ x: e.clientX, y: e.clientY, rel: r.rel, kind: r.kind });
-              }}
-              className={cn(
-                "flex h-[22px] cursor-default items-center gap-1 pr-2 text-[13px]",
-                isSel ? "bg-active" : "hover:bg-hover",
-                r.hidden && "opacity-60",
-              )}
-            >
-              <span className="flex w-3.5 shrink-0 justify-center text-muted">
-                {isDir ? isOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} /> : null}
-              </span>
-              {isDir ? (
-                isOpen ? <FolderOpen size={14} className="shrink-0 text-accent2" /> : <Folder size={14} className="shrink-0 text-accent2" />
-              ) : (
-                <FileIcon size={14} className="shrink-0 text-muted" />
-              )}
-              <span className="truncate">{r.name}</span>
-              {r.symlink && <Link2 size={11} className="shrink-0 text-muted" aria-label="symbolic link" />}
-            </div>
-          );
-        })}
+        <div style={{ height: rows.length * ROW_H + 8, position: "relative" }}>
+          <div style={{ transform: `translateY(${first * ROW_H + 4}px)` }}>
+            {visible.map((r) => {
+              const pad = 10 + r.depth * INDENT;
+              const guides = Array.from({ length: r.depth }, (_, d) => (
+                <span key={d} aria-hidden className="absolute inset-y-0 w-px bg-line/80" style={{ left: 10 + d * INDENT + 7 }} />
+              ));
+              if (r.note === "create" || (editing?.mode === "rename" && editing.rel === r.rel)) {
+                const renaming = r.note !== "create";
+                return (
+                  <div key={r.rel} className="relative flex items-center gap-1.5 pr-2" style={{ height: ROW_H, paddingLeft: pad }}>
+                    {guides}
+                    <span className="w-4 shrink-0" />
+                    {r.kind === "dir" ? <FolderIcon name={r.name} open={false} /> : <FileIcon name={r.name || "fichier"} />}
+                    <InlineName
+                      initial={renaming ? r.name : ""}
+                      placeholder={r.kind === "dir" ? "Nom du dossier" : "Nom du fichier"}
+                      onCommit={(v) => void commitEdit(v)}
+                      onCancel={() => setEditing(null)}
+                    />
+                  </div>
+                );
+              }
+              if (r.note) {
+                return (
+                  <div
+                    key={r.rel}
+                    style={{ height: ROW_H, paddingLeft: pad + 22 }}
+                    className={cn("relative flex items-center gap-1.5 pr-2 text-[12px] italic", r.note === "error" ? "text-danger" : "text-faint")}
+                  >
+                    {guides}
+                    <span className="selectable truncate" title={r.name}>
+                      {r.name}
+                    </span>
+                  </div>
+                );
+              }
+              const isDir = r.kind === "dir";
+              const isOpen = isDir && (query ? true : expanded.has(r.rel));
+              const isSel = selected === r.rel;
+              const loading = isDir && isOpen && dirs[r.rel]?.status === "loading";
+              return (
+                <div
+                  key={r.rel}
+                  id={`tree-${r.rel}`}
+                  data-rel={r.rel}
+                  role="treeitem"
+                  aria-level={r.depth + 1}
+                  aria-expanded={isDir ? isOpen : undefined}
+                  aria-selected={isSel}
+                  title={r.rel}
+                  style={{ height: ROW_H, paddingLeft: pad }}
+                  onClick={() => {
+                    setSelected(r.rel);
+                    if (isDir) toggle(r.rel);
+                    else openFile(r, false);
+                  }}
+                  onDoubleClick={() => !isDir && openFile(r, true)}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    setSelected(r.rel);
+                    setMenu({ x: e.clientX, y: e.clientY, rel: r.rel, kind: r.kind });
+                  }}
+                  className={cn(
+                    "group relative flex cursor-default items-center gap-1.5 pr-2 text-[13px]",
+                    isSel ? "bg-active text-fg" : activeRel === r.rel ? "bg-hover text-fg" : "text-fg2 hover:bg-hover hover:text-fg",
+                    r.hidden && "opacity-55",
+                  )}
+                >
+                  {guides}
+                  {isSel && <span aria-hidden className="absolute inset-y-0 left-0 w-[2px] bg-accent" />}
+                  <span className="flex w-4 shrink-0 justify-center text-muted">
+                    {loading ? (
+                      <LoaderCircle size={12} className="animate-spin" />
+                    ) : isDir ? (
+                      <ChevronRight size={13} className={cn("transition-transform duration-150", isOpen && "rotate-90")} />
+                    ) : null}
+                  </span>
+                  {isDir ? <FolderIcon name={r.name} open={isOpen} /> : <FileIcon name={r.name} />}
+                  <span className="truncate">
+                    <Highlighted text={r.name} query={query} />
+                  </span>
+                  {r.symlink && <Link2 size={11} className="shrink-0 text-faint" aria-label="lien symbolique" />}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+        {query && real.length === 0 && (
+          <p className="px-4 py-3 text-[12px] text-muted">Aucun élément chargé ne correspond à « {filter.trim()} ».</p>
+        )}
       </div>
       {menu && <ContextMenu x={menu.x} y={menu.y} items={menuItems} onClose={() => setMenu(null)} />}
     </>
   );
 });
+
+function Highlighted({ text, query }: { text: string; query: string }) {
+  if (!query) return <>{text}</>;
+  const i = text.toLowerCase().indexOf(query);
+  if (i < 0) return <>{text}</>;
+  return (
+    <>
+      {text.slice(0, i)}
+      <mark className="rounded-[2px] bg-accent/25 text-fg">{text.slice(i, i + query.length)}</mark>
+      {text.slice(i + query.length)}
+    </>
+  );
+}
+
+/** In-place name editor: Enter or leaving the field commits, Escape cancels. */
+function InlineName({
+  initial,
+  placeholder,
+  onCommit,
+  onCancel,
+}: {
+  initial: string;
+  placeholder: string;
+  onCommit: (value: string) => void;
+  onCancel: () => void;
+}) {
+  const [value, setValue] = useState(initial);
+  const done = useRef(false);
+  const ref = useRef<HTMLInputElement>(null);
+  const error = value.trim() && value !== initial ? validateEntryName(value.trim()) : null;
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.focus();
+    // Select the name without its extension, like every file manager.
+    const dot = initial.lastIndexOf(".");
+    el.setSelectionRange(0, dot > 0 ? dot : initial.length);
+  }, [initial]);
+
+  const finish = (commit: boolean) => {
+    if (done.current) return;
+    done.current = true;
+    if (commit && !error) onCommit(value);
+    else onCancel();
+  };
+
+  return (
+    <span className="relative min-w-0 flex-1">
+      <input
+        ref={ref}
+        value={value}
+        placeholder={placeholder}
+        spellCheck={false}
+        aria-invalid={!!error}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => {
+          e.stopPropagation();
+          if (e.key === "Enter") finish(true);
+          else if (e.key === "Escape") finish(false);
+        }}
+        onBlur={() => finish(true)}
+        className={cn(
+          "h-[20px] w-full rounded-[3px] border bg-bg px-1.5 text-[13px] text-fg outline-none placeholder:text-faint",
+          error ? "border-danger" : "border-accent",
+        )}
+      />
+      {error && (
+        <span role="alert" className="absolute left-0 top-[22px] z-10 w-max max-w-64 rounded-[4px] border border-danger/60 bg-elevated px-2 py-1 text-[11.5px] text-danger shadow-[var(--shadow)]">
+          {error}
+        </span>
+      )}
+    </span>
+  );
+}

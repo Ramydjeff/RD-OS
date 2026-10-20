@@ -34,7 +34,7 @@ export const useMonitor = create<MonitorStore>((set) => ({
   },
   refreshWsl: async (distro) => {
     if (!distro) {
-      set({ wsl: null, wslError: "No distribution selected." });
+      set({ wsl: null, wslError: "Aucune distribution sélectionnée." });
       return;
     }
     try {

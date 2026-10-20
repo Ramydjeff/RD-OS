@@ -83,8 +83,8 @@ export function confirmDialog(opts: ConfirmOptions): Promise<boolean> {
         title: opts.title,
         message: opts.message,
         detail: opts.detail,
-        confirmLabel: opts.confirmLabel ?? "Confirm",
-        cancelLabel: opts.cancelLabel ?? "Cancel",
+        confirmLabel: opts.confirmLabel ?? "Confirmer",
+        cancelLabel: opts.cancelLabel ?? "Annuler",
         danger: opts.danger ?? false,
         resolve: (ok) => {
           useUi.setState({ confirm: null });

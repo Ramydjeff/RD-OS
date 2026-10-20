@@ -1,219 +1,214 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { ProcView, StepMark } from "@/components/processes/engine";
+import { STATE_META, StateBadge, procExitText } from "@/components/processes/simStyle";
 import { cn } from "@/lib/cn";
 
-export type ProcessState = "RUNNING" | "SLEEPING" | "WAITING" | "ZOMBIE" | "TERMINATED" | "READY";
-
-export interface SimulatedProcess {
-  pid: number;
-  ppid: number | null;
-  name: string;
-  funcName: string;
-  state: ProcessState;
-  currentLine: number;
-  codeSnippet: string;
-  sleepRemaining?: number;
-  exitCode?: number | null;
-  children: number[];
-  startedAtStep: number;
-  endedAtStep?: number;
-}
-
 interface ProcessTreeGraphProps {
-  processes: Record<number, SimulatedProcess>;
-  rootPid: number;
+  procs: ProcView[];
+  activePid: number | null;
   selectedPid: number | null;
   onSelectProcess: (pid: number) => void;
+  /** Line of the fork() that created each process. */
+  forkLines: Map<number, number>;
+  /** Marks of the current step (fork / reap / exit / signal) to highlight. */
+  marks: StepMark[];
+  /** Step index, used to flag processes created during the current step. */
+  stepIndex: number;
 }
 
-const STATE_CONFIG: Record<
-  ProcessState,
-  { label: string; badge: string; border: string; glow: string; dot: string }
-> = {
-  RUNNING: {
-    label: "Running",
-    badge: "text-[#EA3843] bg-[#D6303A]/15 border-[#D6303A]/40",
-    border: "border-[#D6303A]/70",
-    glow: "shadow-[0_0_12px_rgba(214,48,58,0.25)]",
-    dot: "bg-[#D6303A] animate-ping",
-  },
-  SLEEPING: {
-    label: "Sleeping",
-    badge: "text-[#38BDF8] bg-[#38BDF8]/15 border-[#38BDF8]/40",
-    border: "border-[#38BDF8]/60",
-    glow: "",
-    dot: "bg-[#38BDF8]",
-  },
-  WAITING: {
-    label: "Waiting",
-    badge: "text-[#F59E0B] bg-[#F59E0B]/15 border-[#F59E0B]/40",
-    border: "border-[#F59E0B]/60",
-    glow: "",
-    dot: "bg-[#F59E0B]",
-  },
-  ZOMBIE: {
-    label: "Zombie",
-    badge: "text-[#C084FC] bg-[#A855F7]/15 border-[#A855F7]/40",
-    border: "border-[#A855F7]/60",
-    glow: "",
-    dot: "bg-[#A855F7]",
-  },
-  TERMINATED: {
-    label: "Terminated",
-    badge: "text-muted bg-surface border-line/40",
-    border: "border-line/40 opacity-50",
-    glow: "",
-    dot: "bg-muted/40",
-  },
-  READY: {
-    label: "Ready",
-    badge: "text-[#4ADE80] bg-[#4ADE80]/15 border-[#4ADE80]/40",
-    border: "border-[#4ADE80]/60",
-    glow: "",
-    dot: "bg-[#4ADE80]",
-  },
-};
+const W = 168;
+const H = 74;
+const GAP_X = 16;
+const GAP_Y = 42;
+const TOP = 34;
+const PAD = 12;
 
-interface LayoutNode {
-  pid: number;
+interface Placed {
+  p: ProcView;
   x: number;
   y: number;
 }
 
-export function ProcessTreeGraph({
-  processes,
-  rootPid,
-  selectedPid,
-  onSelectProcess,
-}: ProcessTreeGraphProps) {
-  const { nodes, links, width, height } = useMemo(() => {
-    const list: LayoutNode[] = [];
-    const conns: { from: { x: number; y: number }; to: { x: number; y: number }; childPid: number }[] = [];
-    const levels: Record<number, number[]> = {};
-
-    function assignDepth(pid: number, depth: number) {
-      if (!levels[depth]) levels[depth] = [];
-      levels[depth].push(pid);
-      const p = processes[pid];
-      if (p) p.children.forEach((c) => assignDepth(c, depth + 1));
+function layout(procs: ProcView[]) {
+  const byPid = new Map(procs.map((p) => [p.pid, p]));
+  const kids = new Map<number, ProcView[]>();
+  const roots: ProcView[] = [];
+  for (const p of procs) {
+    if (p.parent !== null && byPid.has(p.parent)) {
+      const list = kids.get(p.parent) ?? [];
+      list.push(p);
+      kids.set(p.parent, list);
+    } else {
+      roots.push(p);
     }
+  }
+  const widthCache = new Map<number, number>();
+  const width = (pid: number): number => {
+    const cached = widthCache.get(pid);
+    if (cached !== undefined) return cached;
+    const ch = kids.get(pid) ?? [];
+    const w = ch.length === 0 ? W : Math.max(W, ch.reduce((s, c) => s + width(c.pid), 0) + GAP_X * (ch.length - 1));
+    widthCache.set(pid, w);
+    return w;
+  };
+  const placed: Placed[] = [];
+  let maxDepth = 0;
+  const place = (p: ProcView, x0: number, depth: number) => {
+    const w = width(p.pid);
+    maxDepth = Math.max(maxDepth, depth);
+    placed.push({ p, x: x0 + (w - W) / 2, y: TOP + depth * (H + GAP_Y) });
+    const ch = kids.get(p.pid) ?? [];
+    const total = ch.reduce((s, c) => s + width(c.pid), 0) + GAP_X * Math.max(0, ch.length - 1);
+    let x = x0 + (w - total) / 2;
+    for (const c of ch) {
+      place(c, x, depth + 1);
+      x += width(c.pid) + GAP_X;
+    }
+  };
+  let x = PAD;
+  for (const r of roots) {
+    place(r, x, 0);
+    x += width(r.pid) + GAP_X;
+  }
+  const totalW = Math.max(W + PAD * 2, x - GAP_X + PAD);
+  const totalH = TOP + (maxDepth + 1) * (H + GAP_Y) - GAP_Y + PAD;
+  return { placed, totalW, totalH };
+}
 
-    if (processes[rootPid]) assignDepth(rootPid, 0);
+export function ProcessTreeGraph({ procs, activePid, selectedPid, onSelectProcess, forkLines, marks, stepIndex }: ProcessTreeGraphProps) {
+  const { placed, totalW, totalH } = useMemo(() => layout(procs), [procs]);
+  const boxRef = useRef<HTMLDivElement>(null);
+  const [boxW, setBoxW] = useState(600);
 
-    const nodeWidth = 150;
-    const nodeHeight = 58;
-    const xGap = 24;
-    const yGap = 44;
+  useEffect(() => {
+    const el = boxRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setBoxW(el.clientWidth));
+    ro.observe(el);
+    setBoxW(el.clientWidth);
+    return () => ro.disconnect();
+  }, []);
 
-    const maxNodes = Math.max(1, ...Object.values(levels).map((l) => l.length));
-    const totalW = Math.max(340, maxNodes * (nodeWidth + xGap) + 20);
-    const positions: Record<number, { x: number; y: number }> = {};
-
-    Object.entries(levels).forEach(([dStr, pids]) => {
-      const depth = Number(dStr);
-      const levelW = pids.length * (nodeWidth + xGap) - xGap;
-      const startX = (totalW - levelW) / 2;
-      const y = 16 + depth * (nodeHeight + yGap);
-
-      pids.forEach((pid, idx) => {
-        const x = startX + idx * (nodeWidth + xGap);
-        positions[pid] = { x, y };
-        list.push({ pid, x, y });
-      });
-    });
-
-    list.forEach((node) => {
-      const p = processes[node.pid];
-      if (p) {
-        p.children.forEach((childPid) => {
-          const childPos = positions[childPid];
-          if (childPos) {
-            conns.push({
-              from: { x: node.x + nodeWidth / 2, y: node.y + nodeHeight },
-              to: { x: childPos.x + nodeWidth / 2, y: childPos.y },
-              childPid,
-            });
-          }
-        });
-      }
-    });
-
-    const maxDepth = Math.max(0, ...Object.keys(levels).map(Number));
-    const totalH = Math.max(220, 32 + (maxDepth + 1) * (nodeHeight + yGap));
-
-    return { nodes: list, links: conns, width: totalW, height: totalH };
-  }, [processes, rootPid]);
+  const scale = Math.max(0.6, Math.min(1, (boxW - 8) / totalW));
+  const pos = new Map(placed.map((n) => [n.p.pid, n]));
+  const forkNow = new Set(marks.filter((m) => m.type === "fork").map((m) => (m as { to: number }).to));
+  const reapNow = new Set(marks.filter((m) => m.type === "reap").map((m) => (m as { child: number }).child));
+  const signalNow = new Set(marks.filter((m) => m.type === "signal").map((m) => (m as { to: number }).to));
+  const root = placed.find((n) => n.p.parent === null);
 
   return (
-    <div className="relative w-full h-full min-h-[220px] overflow-auto flex items-center justify-center p-2">
-      <div style={{ width, height }} className="relative select-none">
-        <svg
-          className="absolute inset-0 pointer-events-none"
-          width={width}
-          height={height}
-          xmlns="http://www.w3.org/2000/svg"
-        >
-          {links.map((link, idx) => {
-            const childProc = processes[link.childPid];
-            const isTerm = childProc?.state === "TERMINATED";
-            const midY = (link.from.y + link.to.y) / 2;
-            const pathD = `M ${link.from.x} ${link.from.y} C ${link.from.x} ${midY}, ${link.to.x} ${midY}, ${link.to.x} ${link.to.y}`;
+    <div ref={boxRef} className="h-full w-full overflow-auto">
+      <div style={{ width: totalW * scale, height: totalH * scale }} className="relative mx-auto">
+        <div style={{ width: totalW, height: totalH, transform: `scale(${scale})`, transformOrigin: "0 0" }} className="absolute left-0 top-0 select-none">
+          <svg className="pointer-events-none absolute inset-0" width={totalW} height={totalH} aria-hidden>
+            {root && (
+              <g>
+                <line x1={root.x + W / 2} y1={18} x2={root.x + W / 2} y2={root.y} stroke="var(--line)" strokeWidth={1.5} strokeDasharray="3 3" />
+              </g>
+            )}
+            {placed.map(({ p, x, y }) => {
+              if (p.parent === null) return null;
+              const par = pos.get(p.parent);
+              if (!par) return null;
+              const x1 = par.x + W / 2;
+              const y1 = par.y + H;
+              const x2 = x + W / 2;
+              const y2 = y;
+              const midY = (y1 + y2) / 2;
+              const fresh = forkNow.has(p.pid);
+              const reaped = reapNow.has(p.pid);
+              const dead = p.state === "TERMINATED";
+              const zombie = p.state === "ZOMBIE";
+              const stroke = fresh || reaped ? "var(--accent)" : dead ? "var(--line)" : "var(--muted)";
+              const line = forkLines.get(p.pid);
+              return (
+                <g key={p.pid}>
+                  <path
+                    d={`M ${x1} ${y1} C ${x1} ${midY}, ${x2} ${midY}, ${x2} ${y2}`}
+                    fill="none"
+                    stroke={stroke}
+                    strokeWidth={fresh || reaped ? 2 : 1.5}
+                    strokeDasharray={dead || zombie || reaped ? "4 3" : undefined}
+                    opacity={dead && !reaped ? 0.6 : 1}
+                  />
+                  {line !== undefined && (
+                    <text x={(x1 + x2) / 2 + (x2 >= x1 ? 6 : -6)} y={midY - 3} textAnchor={x2 >= x1 ? "start" : "end"} fontSize={10} fill="var(--muted)" fontFamily="var(--font-mono)">
+                      fork() l.{line}
+                    </text>
+                  )}
+                </g>
+              );
+            })}
+          </svg>
 
+          {root && (
+            <div
+              className="absolute flex items-center gap-1 rounded-full border border-dashed border-line bg-surface px-2 text-[10px] text-muted"
+              style={{ left: root.x + W / 2 - 56, top: 4, width: 112, height: 16, justifyContent: "center" }}
+              title="Le shell qui a lancé le programme : c'est le père du processus principal"
+            >
+              bash · PID 2000
+            </div>
+          )}
+
+          {placed.map(({ p, x, y }) => {
+            const meta = STATE_META[p.state];
+            const isActive = p.pid === activePid;
+            const isSelected = p.pid === selectedPid;
+            const dead = p.state === "TERMINATED";
+            const born = p.bornStep === stepIndex && p.parent !== null;
+            let detail: string;
+            if (p.external) detail = `exec → ${p.external}`;
+            else if (p.state === "ZOMBIE") detail = `${procExitText(p)} · attend wait()`;
+            else if (dead) detail = `${procExitText(p)}${p.reapedBy === 1 ? " · récupéré par init" : p.reapedBy === 2000 ? " · récupéré par bash" : ""}`;
+            else if (p.blockedOn) detail = p.blockedOn;
+            else detail = `${p.func}() · ligne ${p.line}`;
             return (
-              <path
-                key={idx}
-                d={pathD}
-                fill="none"
-                stroke={isTerm ? "#262E27" : "#D6303A"}
-                strokeWidth={1.5}
-                strokeDasharray={isTerm ? "3 3" : undefined}
-                strokeOpacity={isTerm ? 0.3 : 0.7}
-              />
+              <button
+                key={p.pid}
+                type="button"
+                onClick={() => onSelectProcess(p.pid)}
+                style={{ left: x, top: y, width: W, height: H, borderColor: isActive ? "var(--accent)" : `color-mix(in srgb, ${meta.color} 60%, var(--line))` }}
+                className={cn(
+                  "absolute flex flex-col justify-between rounded-md border bg-surface px-2 py-1.5 text-left transition-[opacity,box-shadow] duration-200",
+                  p.state === "ZOMBIE" && "border-dashed",
+                  dead && "opacity-55",
+                  isActive && "sim-active border-2",
+                  isSelected && "ring-2 ring-accent2/70",
+                  born && "sim-flash",
+                  !isActive && "hover:bg-elevated",
+                )}
+                title={`${p.label} — PID ${p.pid}, PPID ${p.ppid} — ${meta.label} : ${meta.desc}`}
+              >
+                <span className="flex items-center justify-between gap-1">
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    <span className={cn("rounded px-1 font-mono text-[10px] font-bold leading-4", isActive ? "bg-accent text-white" : "bg-elevated text-fg")}>
+                      {p.short}
+                    </span>
+                    <span className="truncate text-[11px] font-semibold text-fg">{p.label}</span>
+                  </span>
+                  <StateBadge state={p.state} />
+                </span>
+                <span className="flex items-center justify-between gap-2 whitespace-nowrap font-mono text-[10px] text-muted">
+                  <span>
+                    PID <span className="font-semibold text-fg">{p.pid}</span>
+                  </span>
+                  {signalNow.has(p.pid) && <span className="font-sans font-semibold text-accent">⚡ signal</span>}
+                  <span
+                    className={cn(p.orphan && "font-semibold text-status-warn")}
+                    title={p.orphan ? "Orphelin : son père est mort, init (PID 1) l'a adopté" : p.ppid === 2000 ? "Père : le shell bash" : undefined}
+                  >
+                    PPID {p.ppid}
+                    {p.orphan ? " · init" : ""}
+                  </span>
+                </span>
+                <span className="truncate text-[10px] text-muted" title={detail}>
+                  {detail}
+                </span>
+              </button>
             );
           })}
-        </svg>
-
-        {nodes.map((node) => {
-          const p = processes[node.pid];
-          if (!p) return null;
-          const conf = STATE_CONFIG[p.state];
-          const isSelected = selectedPid === p.pid;
-
-          return (
-            <div
-              key={p.pid}
-              onClick={() => onSelectProcess(p.pid)}
-              style={{
-                position: "absolute",
-                left: `${node.x}px`,
-                top: `${node.y}px`,
-                width: "150px",
-                height: "58px",
-              }}
-              className={cn(
-                "cursor-pointer rounded-md border bg-[#121613] px-2.5 py-1.5 transition-all flex flex-col justify-between",
-                conf.border,
-                isSelected ? "ring-1 ring-[#D6E7F3] bg-elevated scale-105 z-20" : "hover:border-[#D6E7F3]/50 z-10",
-                p.state === "RUNNING" && conf.glow,
-              )}
-            >
-              <div className="flex items-center justify-between gap-1">
-                <span className="font-semibold text-[11px] text-fg truncate">
-                  {p.name}
-                </span>
-                <span className={cn("rounded px-1 text-[8px] font-bold uppercase border", conf.badge)}>
-                  {p.state}
-                </span>
-              </div>
-
-              <div className="flex items-center justify-between text-[10px] font-mono text-muted">
-                <span>PID <strong className="text-[#D6E7F3]">{p.pid}</strong></span>
-                <span className="truncate max-w-[65px] text-[9px] text-muted/70">
-                  {p.codeSnippet}
-                </span>
-              </div>
-            </div>
-          );
-        })}
+        </div>
       </div>
     </div>
   );

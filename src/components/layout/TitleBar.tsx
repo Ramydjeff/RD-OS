@@ -1,214 +1,122 @@
 import { useEffect, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { Activity, Minus, Square, TerminalSquare, X } from "lucide-react";
-import { RaimyLogo } from "@/components/ui/RaimyLogo";
-import { locationName } from "@/lib/paths";
+import { LayoutGrid, Minus, Search, Square, X } from "lucide-react";
+import { RaimyIcon, RaimyWordmark } from "@/components/ui/RaimyLogo";
 import { formatShortcut, resolveBindings } from "@/lib/shortcuts";
-import { useMonitor } from "@/store/monitor";
+import { locationName } from "@/lib/paths";
+import { useDesktop } from "@/store/desktop";
+import { useEditor } from "@/store/editor";
 import { useSettings } from "@/store/settings";
+import { useUi } from "@/store/ui";
 import { useWorkspace } from "@/store/workspace";
-import { chooseDistro, usableDistros, useWsl } from "@/store/wsl";
-import { cn } from "@/lib/cn";
+
+const VIEW_TITLE = {
+  explorer: "Explorateur",
+  processes: "Processus",
+  environments: "Environnements",
+  settings: "Paramètres",
+} as const;
+
+async function onWindow(fn: (w: ReturnType<typeof getCurrentWindow>) => Promise<unknown>) {
+  try {
+    await fn(getCurrentWindow());
+  } catch {
+    /* not running inside a Tauri window (browser preview) */
+  }
+}
 
 export function TitleBar() {
   const project = useWorkspace((s) => s.project);
   const activeView = useWorkspace((s) => s.activeView);
-  const panelVisible = useWorkspace((s) => s.panelVisible);
-  const togglePanel = useWorkspace((s) => s.togglePanel);
-  const setView = useWorkspace((s) => s.setView);
+  // Select the path only: the file object changes on every keystroke.
+  const activeRel = useEditor((s) => (activeView === "explorer" ? s.files.find((f) => f.key === s.activeKey)?.rel : undefined));
   const shortcuts = useSettings((s) => s.settings.shortcuts);
-  const keys = resolveBindings(shortcuts);
-
-  const status = useWsl((s) => s.status);
-  const selectedDistro = useWorkspace((s) => s.selectedDistro);
-  const distros = usableDistros(status);
-  const activeDistroName = selectedDistro && distros.some((d) => d.name === selectedDistro)
-    ? selectedDistro
-    : chooseDistro(status);
-
-  const host = useMonitor((s) => s.host);
+  const paletteKeys = formatShortcut(resolveBindings(shortcuts).get("palette.open") ?? "Ctrl+Shift+P");
   const [isMaximized, setIsMaximized] = useState(false);
 
-  // Monitor window maximize state in Tauri
   useEffect(() => {
     let unlisten: (() => void) | undefined;
-    async function watchMaximize() {
-      try {
-        const win = getCurrentWindow();
-        if (typeof win?.isMaximized === "function") {
-          setIsMaximized(await win.isMaximized());
-        }
-        if (typeof win?.onResized === "function") {
-          unlisten = await win.onResized(async () => {
-            if (typeof win?.isMaximized === "function") {
-              setIsMaximized(await win.isMaximized());
-            }
-          });
-        }
-      } catch {
-        /* Not running inside Tauri window */
-      }
-    }
-    void watchMaximize();
+    void onWindow(async (win) => {
+      setIsMaximized(await win.isMaximized());
+      unlisten = await win.onResized(async () => setIsMaximized(await win.isMaximized()));
+    });
     return () => unlisten?.();
   }, []);
 
-  const handleMinimize = async () => {
-    try {
-      const win = getCurrentWindow();
-      if (typeof win?.minimize === "function") await win.minimize();
-    } catch {
-      /* browser environment */
-    }
-  };
-
-  const handleMaximize = async () => {
-    try {
-      const win = getCurrentWindow();
-      if (typeof win?.toggleMaximize === "function") {
-        await win.toggleMaximize();
-        if (typeof win?.isMaximized === "function") {
-          setIsMaximized(await win.isMaximized());
-        }
-      }
-    } catch {
-      /* browser environment */
-    }
-  };
-
-  const handleClose = async () => {
-    try {
-      const win = getCurrentWindow();
-      if (typeof win?.close === "function") await win.close();
-    } catch {
-      /* browser environment */
-    }
-  };
+  const context = activeView === "explorer" && project ? locationName(project) : VIEW_TITLE[activeView];
 
   return (
-    <header
-      data-tauri-drag-region
-      className="flex h-9 w-full shrink-0 items-center justify-between border-b border-line bg-[#0C0E0B] select-none text-xs"
-    >
-      {/* Left: Brand Identity */}
-      <div className="flex items-center gap-3 pl-3 pointer-events-auto">
-        <button
-          type="button"
-          onClick={() => setView("explorer")}
-          className="flex items-center gap-2 hover:opacity-90 transition-opacity focus:outline-none"
-          title="rAImy Solutions — Home"
-        >
-          <RaimyLogo size="sm" layout="horizontal" withTagline={false} />
-        </button>
-        <span className="hidden lg:inline-block h-3.5 w-px bg-line/80" />
-        <span className="hidden lg:inline-block text-[10px] font-medium tracking-wider text-[#D6E7F3]/70 uppercase">
-          Visual Computing &amp; Intelligent Hardware
+    <header data-tauri-drag-region className="relative flex h-[38px] w-full shrink-0 items-center border-b border-line bg-surface">
+      {/* Brand + where you are */}
+      <div data-tauri-drag-region className="flex min-w-0 flex-1 items-center gap-2.5 pl-3.5">
+        <RaimyIcon size={17} />
+        <RaimyWordmark className="text-[13.5px]" />
+        <span aria-hidden className="mx-1 h-4 w-px bg-line-strong" />
+        <span data-tauri-drag-region className="truncate text-[12px] text-muted">
+          {context}
+          {activeRel && <span className="text-faint"> / {activeRel}</span>}
         </span>
       </div>
 
-      {/* Middle: Draggable center with project title */}
-      <div
-        data-tauri-drag-region
-        className="flex min-w-0 flex-1 items-center justify-center px-4 text-center cursor-default"
+      {/* Command center */}
+      <button
+        type="button"
+        onClick={() => useUi.getState().setPaletteOpen(true)}
+        title={`Palette de commandes (${paletteKeys})`}
+        className="group flex h-[26px] w-[min(380px,34vw)] shrink-0 items-center gap-2 rounded-[var(--radius-sm)] border border-line bg-bg/70 px-2.5 text-[12px] text-faint transition-colors hover:border-line-strong hover:text-muted"
       >
-        <div data-tauri-drag-region className="flex items-center gap-2 truncate text-muted text-[11px]">
-          {project ? (
-            <>
-              <span className="text-fg font-medium truncate">{locationName(project)}</span>
-              <span className="text-line">•</span>
-              <span className="font-mono text-[10px] text-muted/80 truncate">
-                {project.kind === "linux" ? `${project.distro}:${project.path}` : project.path}
-              </span>
-            </>
-          ) : (
-            <span className="font-medium tracking-wide text-muted/90">
-              {activeView === "processes"
-                ? "Simulateur de Processus UNIX"
-                : activeView === "environments"
-                ? "Environnements & Diagnostics"
-                : activeView === "settings"
-                ? "Paramètres"
-                : "Workspace Dashboard"}
-            </span>
-          )}
-        </div>
-      </div>
+        <Search size={13} className="shrink-0" />
+        <span className="flex-1 truncate text-left">Rechercher une commande, un fichier…</span>
+        <kbd className="shrink-0 font-mono text-[10px] text-faint group-hover:text-muted">{paletteKeys}</kbd>
+      </button>
 
-      {/* Right: Telemetry pill + Terminal toggle + Window controls */}
-      <div className="flex items-center gap-1.5 pr-1 pointer-events-auto">
-        {/* WSL Status Pill */}
+      {/* Desktop shell + window controls */}
+      <div data-tauri-drag-region className="flex flex-1 items-center justify-end gap-1">
         <button
           type="button"
-          onClick={() => setView("environments")}
-          title={`WSL Subsystem: ${activeDistroName ?? "No distro detected"}. Click to configure environments.`}
-          className="hidden sm:flex items-center gap-1.5 rounded-[4px] border border-line bg-surface/80 px-2 py-0.5 text-[11px] text-[#D6E7F3] hover:border-accent/50 hover:bg-elevated transition-colors"
+          onClick={() => useDesktop.getState().setShellMode("desktop")}
+          title="Revenir au bureau rAImy OS"
+          className="mr-1 flex h-[26px] items-center gap-1.5 rounded-[var(--radius-sm)] px-2 text-[12px] text-muted transition-colors hover:bg-hover hover:text-fg"
         >
-          <span
-            className={cn(
-              "h-1.5 w-1.5 rounded-full",
-              status?.available ? "bg-[#4ADE80] shadow-[0_0_6px_#4ADE80]" : "bg-warn shadow-[0_0_6px_#F59E0B]",
+          <LayoutGrid size={14} /> Bureau
+        </button>
+        <div className="flex h-[38px] items-stretch">
+          <button
+            type="button"
+            onClick={() => void onWindow((w) => w.minimize())}
+            aria-label="Réduire"
+            title="Réduire"
+            className="flex w-[46px] items-center justify-center text-muted transition-colors hover:bg-hover hover:text-fg"
+          >
+            <Minus size={14} strokeWidth={1.6} />
+          </button>
+          <button
+            type="button"
+            onClick={() => void onWindow(async (w) => {
+              await w.toggleMaximize();
+              setIsMaximized(await w.isMaximized());
+            })}
+            aria-label={isMaximized ? "Restaurer" : "Agrandir"}
+            title={isMaximized ? "Restaurer" : "Agrandir"}
+            className="flex w-[46px] items-center justify-center text-muted transition-colors hover:bg-hover hover:text-fg"
+          >
+            {isMaximized ? (
+              <svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" strokeWidth="1.1" aria-hidden>
+                <rect x="0.55" y="2.55" width="7.9" height="7.9" rx="1" />
+                <path d="M2.5 2.5V1.6a1 1 0 0 1 1-1h5.9a1 1 0 0 1 1 1v5.9a1 1 0 0 1-1 1h-.9" />
+              </svg>
+            ) : (
+              <Square size={11} strokeWidth={1.6} />
             )}
-          />
-          <span className="font-mono text-[10px] tracking-tight">
-            {activeDistroName ? `WSL • ${activeDistroName}` : "WSL Standby"}
-          </span>
-        </button>
-
-        {/* CPU/Memory Telemetry chip */}
-        {host && (
-          <button
-            type="button"
-            onClick={() => setView("processes")}
-            title={`Host CPU: ${host.appCpuPercent.toFixed(1)}% | RAM: ${(host.appMemoryBytes / 1024 / 1024).toFixed(0)} MB. Click for process manager.`}
-            className="hidden md:flex items-center gap-1.5 rounded-[4px] border border-line bg-surface/80 px-2 py-0.5 text-[11px] text-muted hover:border-accent/50 hover:text-fg transition-colors"
-          >
-            <Activity size={12} className="text-accent" />
-            <span className="font-mono text-[10px]">
-              {host.appCpuPercent.toFixed(0)}% CPU
-            </span>
-          </button>
-        )}
-
-        {/* Quick terminal toggle */}
-        <button
-          type="button"
-          onClick={togglePanel}
-          title={`Toggle Terminal (${formatShortcut(keys.get("view.togglePanel") ?? "Ctrl+Backquote")})`}
-          className={cn(
-            "flex h-6 w-6 items-center justify-center rounded-[4px] transition-colors",
-            panelVisible ? "bg-accent/15 text-accent" : "text-muted hover:bg-hover hover:text-fg",
-          )}
-        >
-          <TerminalSquare size={14} />
-        </button>
-
-        <span className="mx-1 h-3.5 w-px bg-line/80" />
-
-        {/* Window Controls */}
-        <div className="flex items-center">
-          <button
-            type="button"
-            onClick={handleMinimize}
-            aria-label="Minimize"
-            className="flex h-7 w-8 items-center justify-center text-muted hover:bg-hover hover:text-fg transition-colors"
-          >
-            <Minus size={12} />
           </button>
           <button
             type="button"
-            onClick={handleMaximize}
-            aria-label={isMaximized ? "Restore" : "Maximize"}
-            className="flex h-7 w-8 items-center justify-center text-muted hover:bg-hover hover:text-fg transition-colors"
+            onClick={() => void onWindow((w) => w.close())}
+            aria-label="Fermer"
+            title="Fermer"
+            className="flex w-[46px] items-center justify-center text-muted transition-colors hover:bg-[#c42b1c] hover:text-white"
           >
-            <Square size={10} className={isMaximized ? "scale-90" : undefined} />
-          </button>
-          <button
-            type="button"
-            onClick={handleClose}
-            aria-label="Close"
-            className="flex h-7 w-8 items-center justify-center text-muted hover:bg-[#D6303A] hover:text-white transition-colors"
-          >
-            <X size={13} />
+            <X size={15} strokeWidth={1.6} />
           </button>
         </div>
       </div>

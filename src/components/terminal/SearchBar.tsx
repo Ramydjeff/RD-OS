@@ -61,8 +61,8 @@ export function SearchBar({ terminalId }: { terminalId: string }) {
     >
       <TextInput
         ref={inputRef}
-        aria-label="Search terminal output"
-        placeholder="Find"
+        aria-label="Rechercher dans la sortie du terminal"
+        placeholder="Rechercher"
         value={query}
         aria-invalid={invalid}
         className="h-6 w-44 text-xs"
@@ -78,11 +78,11 @@ export function SearchBar({ terminalId }: { terminalId: string }) {
         }}
       />
       <span className="min-w-12 px-1 text-center text-[11px] text-muted" aria-live="polite">
-        {invalid ? "Invalid" : results ? (results.count === 0 ? "No results" : `${results.index + 1}/${results.count}`) : ""}
+        {invalid ? "Invalide" : results ? (results.count === 0 ? "Aucun" : `${results.index + 1}/${results.count}`) : ""}
       </span>
       <IconButton
         size="sm"
-        label="Match case"
+        label="Respecter la casse"
         active={caseSensitive}
         icon={<CaseSensitive size={14} />}
         onClick={() => {
@@ -92,7 +92,7 @@ export function SearchBar({ terminalId }: { terminalId: string }) {
       />
       <IconButton
         size="sm"
-        label="Use regular expression"
+        label="Expression régulière"
         active={regex}
         icon={<Regex size={14} />}
         onClick={() => {
@@ -100,9 +100,9 @@ export function SearchBar({ terminalId }: { terminalId: string }) {
           queueMicrotask(() => run("next"));
         }}
       />
-      <IconButton size="sm" label="Previous match" icon={<ChevronUp size={14} />} onClick={() => run("prev")} />
-      <IconButton size="sm" label="Next match" icon={<ChevronDown size={14} />} onClick={() => run("next")} />
-      <IconButton size="sm" label="Close search" icon={<X size={14} />} onClick={close} />
+      <IconButton size="sm" label="Résultat précédent" icon={<ChevronUp size={14} />} onClick={() => run("prev")} />
+      <IconButton size="sm" label="Résultat suivant" icon={<ChevronDown size={14} />} onClick={() => run("next")} />
+      <IconButton size="sm" label="Fermer la recherche" icon={<X size={14} />} onClick={close} />
     </div>
   );
 }

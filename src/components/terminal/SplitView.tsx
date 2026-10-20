@@ -61,13 +61,13 @@ function SplitNode({ node, tabId, tabActive, multi }: Props & { node: Extract<Pa
       <div
         role="separator"
         aria-orientation={horizontal ? "vertical" : "horizontal"}
-        aria-label="Resize terminal panes"
+        aria-label="Redimensionner les terminaux"
         aria-valuenow={Math.round(node.ratio * 100)}
         tabIndex={0}
         onPointerDown={onPointerDown}
         onKeyDown={onKeyDown}
         className={cn(
-          "shrink-0 bg-line transition-colors hover:bg-accent2/60 focus-visible:bg-accent2/60",
+          "shrink-0 bg-line transition-colors hover:bg-accent/50 focus-visible:bg-accent/50",
           horizontal ? "w-1 cursor-col-resize" : "h-1 cursor-row-resize",
         )}
       />

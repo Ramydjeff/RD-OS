@@ -1,6 +1,9 @@
+pub mod agent;
 pub mod commands;
+pub mod desktop;
 pub mod error;
 pub mod fsops;
+pub mod icons;
 pub mod location;
 pub mod logging;
 pub mod monitor;
@@ -26,8 +29,11 @@ pub fn run() {
             let log_dir = app.path().app_local_data_dir()?.join("logs");
             let log_path = logging::init(&log_dir);
             logging::info("app", &format!("starting RYCOS Dev Environment {}", env!("CARGO_PKG_VERSION")));
+            let icon_dir = app.path().app_local_data_dir()?.join("icons");
             app.manage(Arc::new(AppState {
                 sessions: pty::SessionManager::new(),
+                icons: icons::IconCache::new(icon_dir),
+                agent: agent::AgentState::new(&config_dir),
                 store: settings::Store::new(config_dir),
                 monitor: monitor::HostMonitor::new(),
                 log_path,
@@ -57,6 +63,8 @@ pub fn run() {
             commands::fs_create,
             commands::fs_rename,
             commands::fs_delete,
+            commands::fs_read_file,
+            commands::fs_write_file,
             commands::project_templates,
             commands::project_create,
             commands::settings_load,
@@ -66,6 +74,17 @@ pub fn run() {
             commands::state_save,
             commands::monitor_sample_host,
             commands::monitor_sample_wsl,
+            commands::agent_status,
+            commands::agent_configure,
+            commands::agent_stream,
+            commands::agent_cancel,
+            commands::agent_run_command,
+            commands::desktop_places,
+            commands::desktop_win_apps,
+            commands::desktop_icons,
+            commands::desktop_open,
+            commands::desktop_state_load,
+            commands::desktop_state_save,
         ])
         .build(tauri::generate_context!())
         .expect("error while building the application");

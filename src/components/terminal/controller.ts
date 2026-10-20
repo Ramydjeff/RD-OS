@@ -267,7 +267,7 @@ export class TerminalController {
       this.pushSize(this.term.cols, this.term.rows);
     } catch (e) {
       const message = errorMessage(e);
-      this.writeBanner(`\x1b[31mCould not start the terminal.\x1b[0m\r\n${message}\r\n`);
+      this.writeBanner(`\x1b[31mLe terminal n'a pas pu démarrer.\x1b[0m\r\n${message}\r\n`);
       this.patch({ state: "failed", error: message });
       this.backendId = null;
     } finally {
@@ -294,12 +294,12 @@ export class TerminalController {
     const quick = Date.now() - this.startedAt < 4000;
     if (code !== null && code !== 0 && quick && !this.receivedOutput) {
       this.writeBanner(
-        "\x1b[31mThe session ended immediately.\x1b[0m\r\n" +
-          "Check that the distribution exists and that the starting directory is valid.\r\n",
+        "\x1b[31mLa session s'est terminée immédiatement.\x1b[0m\r\n" +
+          "Vérifiez que la distribution existe et que le dossier de départ est valide.\r\n",
       );
     }
     this.writeBanner(
-      `\r\n\x1b[2m[Session ended${code === null ? "" : ` with exit code ${code}`}. Press Enter or use Restart to start a new shell.]\x1b[0m\r\n`,
+      `\r\n\x1b[2m[Session terminée${code === null ? "" : ` (code de sortie ${code})`}. Appuyez sur Entrée ou sur Redémarrer pour ouvrir un nouveau shell.]\x1b[0m\r\n`,
     );
     // The backend released the PTY already; drop our handle to it.
     const closing = this.backendId;
@@ -338,7 +338,7 @@ export class TerminalController {
       }
     } catch (e) {
       this.inputQueue = "";
-      this.writeBanner(`\r\n\x1b[31m[input error: ${errorMessage(e)}]\x1b[0m\r\n`);
+      this.writeBanner(`\r\n\x1b[31m[erreur de saisie : ${errorMessage(e)}]\x1b[0m\r\n`);
     } finally {
       this.flushing = false;
     }
@@ -499,7 +499,7 @@ export class TerminalController {
     this.backendId = null;
     this.inputQueue = "";
     this.patch({ state: "exited", exitCode: null, backendId: null });
-    this.writeBanner("\r\n\x1b[2m[Session terminated. Press Enter or use Restart to start a new shell.]\x1b[0m\r\n");
+    this.writeBanner("\r\n\x1b[2m[Session arrêtée. Appuyez sur Entrée ou sur Redémarrer pour ouvrir un nouveau shell.]\x1b[0m\r\n");
     try {
       await ipc.terminalClose(id);
     } catch (e) {

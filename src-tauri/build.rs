@@ -24,6 +24,8 @@ const COMMANDS: &[&str] = &[
     "fs_create",
     "fs_rename",
     "fs_delete",
+    "fs_read_file",
+    "fs_write_file",
     "project_templates",
     "project_create",
     "settings_load",
@@ -33,6 +35,17 @@ const COMMANDS: &[&str] = &[
     "state_save",
     "monitor_sample_host",
     "monitor_sample_wsl",
+    "agent_status",
+    "agent_configure",
+    "agent_stream",
+    "agent_cancel",
+    "agent_run_command",
+    "desktop_places",
+    "desktop_win_apps",
+    "desktop_icons",
+    "desktop_open",
+    "desktop_state_load",
+    "desktop_state_save",
 ];
 
 fn main() {

@@ -29,6 +29,8 @@ pub enum AppError {
     Io(String),
     #[error("Not allowed: {0}")]
     Denied(String),
+    #[error("rAImy Agent: {0}")]
+    Agent(String),
 }
 
 impl AppError {
@@ -46,6 +48,7 @@ impl AppError {
             AppError::Pty(_) => "pty",
             AppError::Io(_) => "io",
             AppError::Denied(_) => "denied",
+            AppError::Agent(_) => "agent",
         }
     }
 }

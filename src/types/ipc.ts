@@ -213,3 +213,61 @@ export interface Loaded<T> {
 
 /** Control messages sent through a terminal channel (output arrives as raw bytes). */
 export type TerminalControl = { type: "exit"; code: number | null };
+
+// ─── rAImy OS desktop shell ──────────────────────────────────────────────────
+
+export interface WinApp {
+  name: string;
+  path: string;
+  source: "startmenu" | "desktop";
+  group: string;
+}
+
+export interface KnownFolder {
+  id: string;
+  label: string;
+  path: string;
+}
+
+export interface HostPlaces {
+  userName: string | null;
+  home: string | null;
+  folders: KnownFolder[];
+  drives: string[];
+}
+
+// ─── rAImy Agent ─────────────────────────────────────────────────────────────
+
+export type AgentEffort = "low" | "medium" | "high" | "xhigh" | "max";
+
+export interface AgentStatus {
+  hasKey: boolean;
+  keySource: "stored" | "env" | "none";
+  keyHint: string | null;
+  model: string;
+  effort: AgentEffort;
+  models: { id: string; label: string }[];
+}
+
+export interface AgentConfigureRequest {
+  /** `undefined` keeps the stored key, `""` forgets it. */
+  apiKey?: string;
+  model: string;
+  effort: AgentEffort;
+}
+
+export interface AgentTurnRequest {
+  requestId: string;
+  system: unknown;
+  tools: unknown[];
+  messages: unknown[];
+}
+
+export interface AgentCommandResult {
+  exitCode: number | null;
+  stdout: string;
+  stderr: string;
+  timedOut: boolean;
+  durationMs: number;
+  truncated: boolean;
+}

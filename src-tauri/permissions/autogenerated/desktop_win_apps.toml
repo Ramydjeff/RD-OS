@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-desktop-win-apps"
+description = "Enables the desktop_win_apps command without any pre-configured scope."
+commands.allow = ["desktop_win_apps"]
+
+[[permission]]
+identifier = "deny-desktop-win-apps"
+description = "Denies the desktop_win_apps command without any pre-configured scope."
+commands.deny = ["desktop_win_apps"]

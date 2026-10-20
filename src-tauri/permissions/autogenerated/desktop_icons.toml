@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-desktop-icons"
+description = "Enables the desktop_icons command without any pre-configured scope."
+commands.allow = ["desktop_icons"]
+
+[[permission]]
+identifier = "deny-desktop-icons"
+description = "Denies the desktop_icons command without any pre-configured scope."
+commands.deny = ["desktop_icons"]

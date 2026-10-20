@@ -8,6 +8,8 @@ const FOCUSABLE =
 
 interface ModalProps {
   title: string;
+  /** One line under the title. */
+  description?: ReactNode;
   onClose: () => void;
   children: ReactNode;
   footer?: ReactNode;
@@ -20,7 +22,7 @@ interface ModalProps {
  * Accessible modal: labelled, traps Tab, closes on Escape, and returns focus to
  * whatever had it before (usually the terminal) when it goes away.
  */
-export function Modal({ title, onClose, children, footer, width = "max-w-lg", hideClose }: ModalProps) {
+export function Modal({ title, description, onClose, children, footer, width = "max-w-lg", hideClose }: ModalProps) {
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef(onClose);
@@ -58,7 +60,7 @@ export function Modal({ title, onClose, children, footer, width = "max-w-lg", hi
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-[var(--overlay)] px-4 pt-[12vh]"
+      className="fade-in fixed inset-0 z-50 flex items-start justify-center bg-[var(--overlay)] px-4 pt-[11vh]"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) closeRef.current();
       }}
@@ -70,18 +72,25 @@ export function Modal({ title, onClose, children, footer, width = "max-w-lg", hi
         aria-labelledby={titleId}
         onKeyDown={onKeyDown}
         className={cn(
-          "fade-in flex max-h-[76vh] w-full flex-col rounded-md border border-line bg-surface shadow-[var(--shadow)]",
+          "pop-in flex max-h-[78vh] w-full flex-col overflow-hidden rounded-[var(--radius-lg)] border border-line bg-elevated shadow-[var(--shadow)]",
           width,
         )}
       >
-        <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
-          <h2 id={titleId} className="text-[13px] font-semibold">
-            {title}
-          </h2>
-          {!hideClose && <IconButton label="Close" size="sm" icon={<X size={14} />} onClick={() => closeRef.current()} />}
+        <div className="flex items-start justify-between gap-3 px-5 pb-2 pt-4">
+          <div className="min-w-0">
+            <h2 id={titleId} className="font-display text-[16px] font-semibold tracking-[-0.01em] text-fg">
+              {title}
+            </h2>
+            {description && <p className="mt-0.5 text-[12.5px] text-muted">{description}</p>}
+          </div>
+          {!hideClose && (
+            <IconButton label="Fermer" size="sm" icon={<X size={15} />} className="-mr-1.5 mt-0.5" onClick={() => closeRef.current()} />
+          )}
         </div>
-        <div className="min-h-0 flex-1 overflow-auto px-4 py-3">{children}</div>
-        {footer && <div className="flex items-center justify-end gap-2 border-t border-line px-4 py-2.5">{footer}</div>}
+        <div className="min-h-0 flex-1 overflow-auto px-5 pb-4 pt-2">{children}</div>
+        {footer && (
+          <div className="flex items-center justify-end gap-2 border-t border-line bg-surface/60 px-5 py-3">{footer}</div>
+        )}
       </div>
     </div>
   );

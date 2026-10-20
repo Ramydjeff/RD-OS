@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-desktop-places"
+description = "Enables the desktop_places command without any pre-configured scope."
+commands.allow = ["desktop_places"]
+
+[[permission]]
+identifier = "deny-desktop-places"
+description = "Denies the desktop_places command without any pre-configured scope."
+commands.deny = ["desktop_places"]

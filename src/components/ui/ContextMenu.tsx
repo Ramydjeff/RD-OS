@@ -1,10 +1,13 @@
 import { useEffect, useRef, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { cn } from "@/lib/cn";
 
 export interface MenuItem {
   id: string;
   label: string;
   icon?: ReactNode;
+  /** Keyboard hint shown on the right, e.g. "F2". */
+  hint?: string;
   danger?: boolean;
   disabled?: boolean;
   onSelect: () => void;
@@ -54,17 +57,20 @@ export function ContextMenu({ x, y, items, onClose }: Props) {
     }
   }
 
-  return (
+  // Rendered on <body>: inside a desktop window (`contain: paint`) a fixed
+  // element would be placed relative to the window instead of the screen.
+  return createPortal(
     <div
       ref={ref}
       role="menu"
       onKeyDown={onKeyDown}
+      onContextMenu={(e) => e.preventDefault()}
       style={{ left: x, top: y }}
-      className="fade-in fixed z-[55] min-w-48 rounded-md border border-line bg-elevated py-1 shadow-[var(--shadow)]"
+      className="pop-in fixed z-[55] min-w-52 rounded-[var(--radius-md)] border border-line bg-elevated p-1 shadow-[var(--shadow)]"
     >
       {items.map((item, idx) =>
         item === "separator" ? (
-          <div key={`sep-${idx}`} role="separator" className="my-1 h-px bg-line" />
+          <div key={`sep-${idx}`} role="separator" className="mx-2 my-1 h-px bg-line" />
         ) : (
           <button
             key={item.id}
@@ -76,15 +82,18 @@ export function ContextMenu({ x, y, items, onClose }: Props) {
               item.onSelect();
             }}
             className={cn(
-              "flex w-full items-center gap-2 px-3 py-1 text-left text-[13px] hover:bg-hover focus-visible:bg-hover disabled:opacity-40",
+              "flex h-7 w-full items-center gap-2.5 rounded-[5px] px-2 text-left text-[12.5px] text-fg",
+              "hover:bg-hover focus-visible:bg-hover focus-visible:outline-none disabled:opacity-40",
               item.danger && "text-danger",
             )}
           >
-            <span className="w-4 shrink-0">{item.icon}</span>
-            {item.label}
+            <span className={cn("flex w-4 shrink-0 justify-center", item.danger ? "text-danger" : "text-muted")}>{item.icon}</span>
+            <span className="min-w-0 flex-1 truncate">{item.label}</span>
+            {item.hint && <span className="shrink-0 pl-4 font-mono text-[10.5px] text-faint">{item.hint}</span>}
           </button>
         ),
       )}
-    </div>
+    </div>,
+    document.body,
   );
 }

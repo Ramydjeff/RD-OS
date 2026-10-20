@@ -4,12 +4,17 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { toAppError } from "@/lib/errors";
 import type {
+  AgentCommandResult,
+  AgentConfigureRequest,
+  AgentStatus,
+  AgentTurnRequest,
   AppInfo,
   BusyInfo,
   CreateProjectRequest,
   CreateProjectResult,
   DirListing,
   Diagnostics,
+  HostPlaces,
   HostReport,
   Loaded,
   Location,
@@ -18,6 +23,7 @@ import type {
   Settings,
   TemplateInfo,
   TerminalControl,
+  WinApp,
   WorkspaceState,
   WslMetrics,
   WslStatus,
@@ -77,6 +83,9 @@ export const ipc = {
   fsRename: (root: Location, rel: string, newName: string) =>
     call<void>("fs_rename", { root, rel, newName }),
   fsDelete: (root: Location, rel: string) => call<void>("fs_delete", { root, rel }),
+  fsReadFile: (root: Location, rel: string) => call<string>("fs_read_file", { root, rel }),
+  fsWriteFile: (root: Location, rel: string, content: string) =>
+    call<void>("fs_write_file", { root, rel, content }),
 
   projectTemplates: () => call<TemplateInfo[]>("project_templates"),
   projectCreate: (req: CreateProjectRequest) => call<CreateProjectResult>("project_create", { req }),
@@ -89,6 +98,23 @@ export const ipc = {
 
   monitorHost: () => call<HostReport>("monitor_sample_host"),
   monitorWsl: (distro: string) => call<WslMetrics>("monitor_sample_wsl", { distro }),
+
+  agentStatus: () => call<AgentStatus>("agent_status"),
+  agentConfigure: (req: AgentConfigureRequest) => call<AgentStatus>("agent_configure", { req }),
+  /** Resolves `true` when the turn completed, `false` when it was cancelled. */
+  agentStream: (req: AgentTurnRequest, channel: Channel<Record<string, unknown>>) =>
+    call<boolean>("agent_stream", { req, onEvent: channel }),
+  agentCancel: (requestId: string) => call<void>("agent_cancel", { requestId }),
+  agentRunCommand: (distro: string, cwd: string | null, command: string) =>
+    call<AgentCommandResult>("agent_run_command", { distro, cwd, command }),
+
+  desktopPlaces: () => call<HostPlaces>("desktop_places"),
+  desktopWinApps: () => call<WinApp[]>("desktop_win_apps"),
+  /** Real Windows icons as PNG data URLs (null when there is none), at most 64 paths per call. */
+  desktopIcons: (paths: string[]) => call<(string | null)[]>("desktop_icons", { paths }),
+  desktopOpen: (location: Location, reveal = false) => call<void>("desktop_open", { location, reveal }),
+  desktopStateLoad: () => call<Loaded<Record<string, unknown>>>("desktop_state_load"),
+  desktopStateSave: (value: Record<string, unknown>) => call<void>("desktop_state_save", { value }),
 };
 
 export { Channel };

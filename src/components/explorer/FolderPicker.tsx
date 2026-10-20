@@ -98,7 +98,7 @@ export function FolderPicker({ title, confirmLabel, initial, onSelect, onClose }
     try {
       const r = await ipc.fsResolveLocation(pathInput, mode === "linux" ? distro : null);
       if (!r.exists || !r.isDir) {
-        setError(`${r.display} is not an existing folder.`);
+        setError(`${r.display} n'est pas un dossier existant.`);
         return;
       }
       await navigate(r.location);
@@ -109,7 +109,7 @@ export function FolderPicker({ title, confirmLabel, initial, onSelect, onClose }
 
   async function browseNative() {
     try {
-      const picked = await openNativeDialog({ directory: true, multiple: false, title: "Choose a Windows folder" });
+      const picked = await openNativeDialog({ directory: true, multiple: false, title: "Choisir un dossier Windows" });
       if (typeof picked === "string") {
         const r = await ipc.fsResolveLocation(picked, null);
         await navigate(r.location);
@@ -137,7 +137,7 @@ export function FolderPicker({ title, confirmLabel, initial, onSelect, onClose }
       width="max-w-xl"
       footer={
         <>
-          <Button onClick={onClose}>Cancel</Button>
+          <Button variant="ghost" onClick={onClose}>Annuler</Button>
           <Button variant="primary" disabled={!current || loading} onClick={() => current && onSelect(current)}>
             {confirmLabel}
           </Button>
@@ -146,7 +146,7 @@ export function FolderPicker({ title, confirmLabel, initial, onSelect, onClose }
     >
       <div className="space-y-3">
         <div className="flex items-center gap-2">
-          <div role="tablist" aria-label="Filesystem" className="flex rounded-[var(--radius-sm)] border border-line p-0.5">
+          <div role="tablist" aria-label="Système de fichiers" className="flex rounded-[var(--radius-sm)] bg-glass p-0.5 shadow-[inset_0_0_0_1px_var(--glass-line)]">
             {(["linux", "windows"] as const).map((m) => (
               <button
                 key={m}
@@ -155,7 +155,7 @@ export function FolderPicker({ title, confirmLabel, initial, onSelect, onClose }
                 aria-selected={mode === m}
                 disabled={m === "linux" && distros.length === 0}
                 onClick={() => switchMode(m)}
-                className={`rounded-[3px] px-2.5 py-0.5 text-xs ${mode === m ? "bg-active text-fg" : "text-muted hover:text-fg"} disabled:opacity-40`}
+                className={`h-7 rounded-[5px] px-3 text-[12.5px] ${mode === m ? "bg-elevated text-fg shadow-sm" : "text-muted hover:text-fg"} disabled:opacity-40`}
               >
                 {m === "linux" ? "Linux (WSL)" : "Windows"}
               </button>
@@ -172,7 +172,7 @@ export function FolderPicker({ title, confirmLabel, initial, onSelect, onClose }
           )}
           {mode === "windows" && (
             <Button size="sm" onClick={() => void browseNative()}>
-              <FolderOpen size={13} /> Browse...
+              <FolderOpen size={13} /> Parcourir…
             </Button>
           )}
         </div>
@@ -185,14 +185,14 @@ export function FolderPicker({ title, confirmLabel, initial, onSelect, onClose }
           }}
         >
           <IconButton
-            label="Up one level"
+            label="Dossier parent"
             icon={<ArrowUp size={14} />}
             disabled={!parent || loading}
             onClick={() => parent && void navigate(parent)}
           />
           {mode === "linux" && distro && (
             <IconButton
-              label="Linux home directory"
+              label="Dossier personnel Linux"
               icon={<Home size={14} />}
               onClick={() =>
                 void ipc
@@ -203,21 +203,21 @@ export function FolderPicker({ title, confirmLabel, initial, onSelect, onClose }
             />
           )}
           <TextInput
-            aria-label="Folder path"
+            aria-label="Chemin du dossier"
             value={pathInput}
             onChange={(e) => setPathInput(e.target.value)}
-            placeholder={mode === "linux" ? "/home/you/projects" : "C:\\Users\\you\\projects"}
+            placeholder={mode === "linux" ? "/home/vous/projets" : "C:\\Users\\vous\\projets"}
             className="font-mono text-xs"
           />
           <Button type="submit" size="sm">
-            Go
+            Aller
           </Button>
         </form>
 
         {current && isMountedWindowsPath(current) && (
           <p className="rounded-[var(--radius-sm)] border border-warn/40 px-2 py-1 text-xs text-warn">
-            This is a Windows drive mounted into WSL (/mnt/...). File access is slower than the Linux filesystem; keep Linux-heavy
-            projects under your Linux home directory instead.
+            Disque Windows monté dans WSL (/mnt/…) : l'accès aux fichiers y est plus lent que sur le système de fichiers Linux.
+            Gardez plutôt vos projets Linux dans votre dossier personnel.
           </p>
         )}
         {error && (
@@ -228,15 +228,15 @@ export function FolderPicker({ title, confirmLabel, initial, onSelect, onClose }
 
         <div
           role="listbox"
-          aria-label="Folders"
-          className="h-64 overflow-auto rounded-[var(--radius-sm)] border border-line bg-bg"
+          aria-label="Dossiers"
+          className="h-72 overflow-auto rounded-[var(--radius-md)] border border-line bg-bg py-1"
         >
           {loading && (
             <p className="flex items-center gap-2 p-3 text-xs text-muted">
-              <LoaderCircle size={13} className="animate-spin" /> Loading...
+              <LoaderCircle size={13} className="animate-spin" /> Chargement…
             </p>
           )}
-          {!loading && entries.length === 0 && !error && <p className="p-3 text-xs text-muted">No sub-folders.</p>}
+          {!loading && entries.length === 0 && !error && <p className="p-3 text-[12.5px] text-muted">Aucun sous-dossier.</p>}
           {entries.map((e) => (
             <button
               key={e.name}
@@ -245,17 +245,17 @@ export function FolderPicker({ title, confirmLabel, initial, onSelect, onClose }
               aria-selected={false}
               onDoubleClick={() => enter(e.name)}
               onClick={() => enter(e.name)}
-              className="flex w-full items-center gap-2 px-3 py-1 text-left text-[13px] hover:bg-hover"
+              className="flex h-7 w-full items-center gap-2 px-3 text-left text-[13px] text-fg2 hover:bg-hover hover:text-fg"
             >
-              <Folder size={14} className="shrink-0 text-accent2" />
+              <Folder size={14} strokeWidth={1.75} className="shrink-0 text-[var(--brand-tagline)]" />
               <span className="min-w-0 flex-1 truncate">{e.name}</span>
               <ChevronRight size={12} className="text-muted" />
             </button>
           ))}
-          {truncated && <p className="p-2 text-xs text-muted">Only the first entries are shown.</p>}
+          {truncated && <p className="p-2 text-xs text-muted">Seules les premières entrées sont affichées.</p>}
         </div>
         <p className="selectable truncate font-mono text-xs text-muted">
-          Selected: {current ? locationDisplay(current) : "-"}
+          Sélection : {current ? locationDisplay(current) : "—"}
         </p>
       </div>
     </Modal>

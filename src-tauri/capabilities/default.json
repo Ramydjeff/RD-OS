@@ -14,11 +14,14 @@
     "core:window:allow-start-dragging",
     "core:window:allow-close",
     "core:window:allow-destroy",
+    "core:window:allow-set-fullscreen",
+    "core:window:allow-is-fullscreen",
     "dialog:allow-open",
     {
       "identifier": "opener:allow-open-url",
       "allow": [{ "url": "https://*" }, { "url": "http://*" }]
     },
+    "opener:allow-reveal-item-in-dir",
     "allow-app-info",
     "allow-app-log",
     "allow-wsl-detect",
@@ -41,6 +44,8 @@
     "allow-fs-create",
     "allow-fs-rename",
     "allow-fs-delete",
+    "allow-fs-read-file",
+    "allow-fs-write-file",
     "allow-project-templates",
     "allow-project-create",
     "allow-settings-load",
@@ -49,6 +54,17 @@
     "allow-state-load",
     "allow-state-save",
     "allow-monitor-sample-host",
-    "allow-monitor-sample-wsl"
+    "allow-monitor-sample-wsl",
+    "allow-agent-status",
+    "allow-agent-configure",
+    "allow-agent-stream",
+    "allow-agent-cancel",
+    "allow-agent-run-command",
+    "allow-desktop-places",
+    "allow-desktop-win-apps",
+    "allow-desktop-icons",
+    "allow-desktop-open",
+    "allow-desktop-state-load",
+    "allow-desktop-state-save"
   ]
 }

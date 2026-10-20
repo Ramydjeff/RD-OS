@@ -2,18 +2,21 @@ import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from "react";
 import { cn } from "@/lib/cn";
 
 type Variant = "primary" | "secondary" | "ghost" | "danger";
-type Size = "sm" | "md";
+type Size = "sm" | "md" | "lg";
 
 const VARIANTS: Record<Variant, string> = {
-  primary: "bg-accent text-white font-medium hover:brightness-110 active:brightness-95 disabled:hover:brightness-100 shadow-[0_2px_10px_rgba(214,48,58,0.25)] hover:shadow-[0_4px_16px_rgba(214,48,58,0.38)]",
-  secondary: "bg-elevated text-fg border border-line hover:bg-active hover:border-line/80",
-  ghost: "text-fg hover:bg-hover",
-  danger: "bg-danger text-white font-medium hover:brightness-110 disabled:hover:brightness-100 shadow-[0_2px_10px_rgba(224,56,66,0.25)]",
+  primary:
+    "bg-accent text-onaccent hover:bg-accent-hover shadow-[inset_0_1px_0_rgb(255_255_255/0.22)] disabled:hover:bg-accent",
+  secondary:
+    "bg-glass text-fg shadow-[inset_0_0_0_1px_var(--glass-line)] hover:bg-glass-hover disabled:hover:bg-glass",
+  ghost: "text-fg2 hover:bg-hover hover:text-fg disabled:hover:bg-transparent",
+  danger: "bg-danger text-onaccent hover:brightness-110 disabled:hover:brightness-100",
 };
 
 const SIZES: Record<Size, string> = {
-  sm: "h-6 px-2 text-xs gap-1.5",
-  md: "h-7 px-3 text-[13px] gap-2",
+  sm: "h-[26px] px-2.5 text-[12px] gap-1.5",
+  md: "h-8 px-3.5 text-[13px] gap-2",
+  lg: "h-10 px-5 text-[14px] gap-2.5",
 };
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -30,8 +33,9 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       ref={ref}
       type={type}
       className={cn(
-        "inline-flex shrink-0 items-center justify-center rounded-[var(--radius-sm)] font-medium transition-colors",
-        "disabled:cursor-not-allowed disabled:opacity-45",
+        "inline-flex shrink-0 select-none items-center justify-center whitespace-nowrap rounded-[var(--radius-sm)] font-medium",
+        "transition-[background-color,color,box-shadow,filter] duration-150 active:translate-y-px",
+        "disabled:cursor-not-allowed disabled:opacity-45 disabled:active:translate-y-0",
         VARIANTS[variant],
         SIZES[size],
         className,
@@ -61,8 +65,8 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(functio
       title={label}
       aria-pressed={active === undefined ? undefined : active}
       className={cn(
-        "inline-flex shrink-0 items-center justify-center rounded-[var(--radius-sm)] text-muted transition-colors",
-        "hover:bg-hover hover:text-fg disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted",
+        "inline-flex shrink-0 items-center justify-center rounded-[var(--radius-sm)] text-muted transition-colors duration-150",
+        "hover:bg-hover hover:text-fg disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-muted",
         size === "sm" ? "h-6 w-6" : "h-7 w-7",
         active && "bg-active text-fg",
         className,

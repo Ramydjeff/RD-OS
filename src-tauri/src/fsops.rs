@@ -327,6 +327,49 @@ pub fn delete_entry(root: &Location, rel: &str) -> AppResult<()> {
     Ok(())
 }
 
+/// Text files only: the editor refuses binaries and anything above this size.
+const MAX_READ_BYTES: u64 = 2 * 1024 * 1024;
+
+pub fn read_file(root: &Location, rel: &str) -> AppResult<String> {
+    let root_host = root.normalized()?.host_path()?;
+    let segs = parse_rel(rel)?;
+    if segs.is_empty() {
+        return Err(AppError::InvalidInput("choose a file, not the project root".into()));
+    }
+    let target = join(&root_host, &segs);
+    let shown = segs.join("/");
+    let io_err = |e: std::io::Error| match e.kind() {
+        std::io::ErrorKind::NotFound => AppError::NotFound(format!("{shown} does not exist")),
+        std::io::ErrorKind::PermissionDenied => AppError::Denied(format!("cannot read {shown}")),
+        _ => AppError::Io(format!("cannot read {shown}: {e}")),
+    };
+    let meta = fs::metadata(&target).map_err(io_err)?;
+    if !meta.is_file() {
+        return Err(AppError::InvalidInput(format!("{shown} is not a regular file")));
+    }
+    if meta.len() > MAX_READ_BYTES {
+        return Err(AppError::InvalidInput(format!(
+            "{shown} is too large to open here ({} KB, the limit is {} KB)",
+            meta.len() / 1024,
+            MAX_READ_BYTES / 1024
+        )));
+    }
+    let bytes = fs::read(&target).map_err(io_err)?;
+    if bytes.contains(&0) {
+        return Err(AppError::InvalidInput(format!("{shown} is a binary file")));
+    }
+    String::from_utf8(bytes).map_err(|_| AppError::InvalidInput(format!("{shown} is not UTF-8 text")))
+}
+
+pub fn write_file(root: &Location, rel: &str, content: &str) -> AppResult<()> {
+    let root_host = writable_root(root)?;
+    let segs = parse_rel(rel)?;
+    ensure_no_link_in_chain(&root_host, &segs, false)?;
+    let target = join(&root_host, &segs);
+    fs::write(&target, content).map_err(|e| AppError::Io(format!("cannot write {}: {e}", segs.join("/"))))?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -390,6 +433,29 @@ mod tests {
 
         delete_entry(&root, "src").unwrap();
         assert!(!dir.path().join("src").exists());
+    }
+
+    #[test]
+    fn read_and_write_text_files() {
+        let dir = tempdir().unwrap();
+        let root = win_root(dir.path());
+        write_file(&root, "notes.md", "# bonjour\n").unwrap();
+        assert_eq!(read_file(&root, "notes.md").unwrap(), "# bonjour\n");
+
+        fs::write(dir.path().join("blob.bin"), [0x7f, b'E', b'L', b'F', 0, 1, 2]).unwrap();
+        assert!(matches!(read_file(&root, "blob.bin"), Err(AppError::InvalidInput(_))));
+
+        fs::write(dir.path().join("latin1.txt"), [b'c', 0xe9]).unwrap();
+        assert!(matches!(read_file(&root, "latin1.txt"), Err(AppError::InvalidInput(_))));
+
+        fs::create_dir(dir.path().join("sub")).unwrap();
+        assert!(matches!(read_file(&root, "sub"), Err(AppError::InvalidInput(_))));
+        assert!(matches!(read_file(&root, ""), Err(AppError::InvalidInput(_))));
+        assert!(matches!(read_file(&root, "missing.txt"), Err(AppError::NotFound(_))));
+
+        let big = vec![b'a'; (MAX_READ_BYTES + 1) as usize];
+        fs::write(dir.path().join("big.txt"), big).unwrap();
+        assert!(matches!(read_file(&root, "big.txt"), Err(AppError::InvalidInput(_))));
     }
 
     #[test]

@@ -72,18 +72,25 @@ export function isMountedWindowsPath(loc: Location): boolean {
 
 /** Names that cannot be used for a file or folder (mirrors the backend rules). */
 export function validateEntryName(name: string): string | null {
-  if (!name.trim()) return "Enter a name.";
-  if (name.length > 255) return "That name is too long.";
-  if (name === "." || name === "..") return "That name is reserved.";
-  if (/[\\/<>:"|?*\u0000-\u001f]/.test(name)) return 'Names cannot contain / \\ < > : " | ? *';
-  if (/[. ]$/.test(name)) return "Names cannot end with a dot or a space.";
-  if (/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i.test(name)) return "That is a reserved Windows device name.";
+  if (!name.trim()) return "Saisissez un nom.";
+  if (name.length > 255) return "Ce nom est trop long.";
+  if (name === "." || name === "..") return "Ce nom est réservé.";
+  if (/[\\/<>:"|?*\u0000-\u001f]/.test(name)) return 'Un nom ne peut pas contenir / \\ < > : " | ? *';
+  if (/[. ]$/.test(name)) return "Un nom ne peut pas finir par un point ou une espace.";
+  if (/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i.test(name)) return "Ce nom est réservé par Windows.";
   return null;
 }
 
 export function validateProjectName(name: string): string | null {
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(name) || name.endsWith(".")) {
-    return "Use letters, digits, '.', '_' or '-' (max 64), starting with a letter or digit.";
+    return "Lettres, chiffres, « . », « _ » ou « - » (64 max.), en commençant par une lettre ou un chiffre.";
   }
   return validateEntryName(name);
+}
+
+/** Path as Windows sees it (\\wsl.localhost\<distro>\... for Linux), mirroring Location::host_path. */
+export function hostPathOf(loc: Location): string {
+  if (loc.kind === "windows") return loc.path;
+  const segs = loc.path.split("/").filter(Boolean);
+  return `\\\\wsl.localhost\\${loc.distro}\\${segs.join("\\")}`;
 }

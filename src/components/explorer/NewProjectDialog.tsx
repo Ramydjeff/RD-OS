@@ -21,6 +21,14 @@ interface Suggestion {
   note?: string;
 }
 
+/** French names for the backend's templates (same ids as templates.rs). */
+const TEMPLATE_FR: Record<string, { label: string; description: string }> = {
+  python: { label: "Python", description: "Script Python minimal, prêt pour un environnement virtuel." },
+  vision: { label: "Vision par ordinateur", description: "Exemple OpenCV : lire, traiter et enregistrer une image." },
+  node: { label: "Node.js", description: "Projet JavaScript avec package.json." },
+  cpp: { label: "C++ (CMake)", description: "Programme C++ compilé avec CMake." },
+};
+
 const INSTALL_BUILD_TOOLS = "sudo apt update && sudo apt install -y build-essential cmake";
 
 async function suggestionsFor(template: string, name: string, location: Location, result: CreateProjectResult): Promise<Suggestion[]> {
@@ -28,23 +36,23 @@ async function suggestionsFor(template: string, name: string, location: Location
   switch (template) {
     case "python":
       return [
-        { label: "Run the program", command: "python3 main.py" },
+        { label: "Lancer le programme", command: "python3 main.py" },
         ...(result.venv?.ok
-          ? [{ label: "Activate the virtual environment", command: "source .venv/bin/activate" }]
-          : [{ label: "Create a virtual environment (optional)", command: "python3 -m venv .venv && source .venv/bin/activate" }]),
+          ? [{ label: "Activer l'environnement virtuel", command: "source .venv/bin/activate" }]
+          : [{ label: "Créer un environnement virtuel (facultatif)", command: "python3 -m venv .venv && source .venv/bin/activate" }]),
       ];
     case "vision":
       return [
         {
-          label: "Install OpenCV into a virtual environment",
+          label: "Installer OpenCV dans un environnement virtuel",
           command: `${result.venv?.ok ? "" : "python3 -m venv .venv && "}source .venv/bin/activate && pip install -r requirements.txt`,
-          note: "Downloads OpenCV and NumPy (roughly 100 MB). It is not run automatically.",
+          note: "Télécharge OpenCV et NumPy (environ 100 Mo). Rien n'est lancé automatiquement.",
         },
-        { label: "Run the example", command: "python3 main.py input.jpg output.jpg" },
+        { label: "Lancer l'exemple", command: "python3 main.py input.jpg output.jpg" },
       ];
     case "node":
       return [
-        { label: "Run the program", command: "npm start", note: "Needs Node.js and npm in your distribution." },
+        { label: "Lancer le programme", command: "npm start", note: "Nécessite Node.js et npm dans la distribution." },
       ];
     case "cpp": {
       // Only offer the build when a compiler and CMake are really installed.
@@ -59,12 +67,12 @@ async function suggestionsFor(template: string, name: string, location: Location
         }
       }
       return ready
-        ? [{ label: "Configure, build and run", command: `cmake -S . -B build && cmake --build build && ./build/${q}` }]
+        ? [{ label: "Configurer, compiler et lancer", command: `cmake -S . -B build && cmake --build build && ./build/${q}` }]
         : [
             {
-              label: "Install the compiler and CMake first",
+              label: "Installer d'abord le compilateur et CMake",
               command: INSTALL_BUILD_TOOLS,
-              note: "g++ and/or cmake were not found (or could not be checked). The build is offered once they are installed.",
+              note: "g++ ou cmake est introuvable (ou n'a pas pu être vérifié). La compilation sera proposée une fois installés.",
             },
           ];
     }
@@ -120,9 +128,9 @@ export function NewProjectDialog({ onClose }: { onClose: () => void }) {
       const err = toAppError(e);
       if (err instanceof AppError && err.kind === "already_exists" && !allowExisting) {
         const ok = await confirmDialog({
-          title: "Folder already exists",
-          message: `"${name}" already exists in ${locationDisplay(parent)}. Add the template's missing files to it? Existing files are never overwritten.`,
-          confirmLabel: "Add missing files",
+          title: "Ce dossier existe déjà",
+          message: `« ${name} » existe déjà dans ${locationDisplay(parent)}. Y ajouter les fichiers manquants du modèle ? Les fichiers existants ne sont jamais écrasés.`,
+          confirmLabel: "Ajouter les fichiers manquants",
         });
         if (ok) return create(true);
       } else {
@@ -136,8 +144,8 @@ export function NewProjectDialog({ onClose }: { onClose: () => void }) {
   if (picking) {
     return (
       <FolderPicker
-        title="Choose where to create the project"
-        confirmLabel="Use this folder"
+        title="Où créer le projet ?"
+        confirmLabel="Utiliser ce dossier"
         initial={parent}
         onClose={() => setPicking(false)}
         onSelect={(loc) => {
@@ -151,43 +159,43 @@ export function NewProjectDialog({ onClose }: { onClose: () => void }) {
   if (done) {
     return (
       <Modal
-        title="Project created"
+        title="Projet créé"
         onClose={onClose}
         width="max-w-xl"
         footer={
           <>
-            <Button onClick={() => void openTerminal({ cwd: done.result.location })}>Open terminal here</Button>
+            <Button onClick={() => void openTerminal({ cwd: done.result.location })}>Ouvrir un terminal ici</Button>
             <Button variant="primary" onClick={onClose}>
-              Done
+              Terminé
             </Button>
           </>
         }
       >
         <div className="space-y-3">
           <p className="flex items-center gap-2 text-[13px]">
-            <Check size={15} className="text-accent" />
+            <Check size={15} className="text-ok" />
             <span className="selectable font-mono text-xs">{locationDisplay(done.result.location)}</span>
           </p>
           <p className="text-xs text-muted">
-            Created: {done.result.created.join(", ") || "nothing new"}
-            {done.result.skipped.length > 0 && ` · kept existing: ${done.result.skipped.join(", ")}`}
+            Créés : {done.result.created.join(", ") || "aucun nouveau fichier"}
+            {done.result.skipped.length > 0 && ` · conservés : ${done.result.skipped.join(", ")}`}
           </p>
           {done.result.venv && (
-            <p className={cn("text-xs", done.result.venv.ok ? "text-accent" : "text-warn")}>
-              Virtual environment: {done.result.venv.message}
+            <p className={cn("text-xs", done.result.venv.ok ? "text-ok" : "text-warn")}>
+              Environnement virtuel : {done.result.venv.message}
             </p>
           )}
           {done.suggestions.length > 0 && (
             <div className="space-y-2">
-              <h3 className="text-xs font-semibold">Next steps</h3>
-              <p className="text-xs text-muted">Commands are inserted at the prompt of your active terminal. Nothing runs until you press Enter.</p>
+              <h3 className="text-[13px] font-semibold text-fg">Étapes suivantes</h3>
+              <p className="text-xs text-muted">Les commandes sont insérées dans le terminal actif. Rien ne s'exécute avant que vous appuyiez sur Entrée.</p>
               {done.suggestions.map((s) => (
                 <div key={s.command} className="rounded-[var(--radius-sm)] border border-line p-2">
                   <p className="mb-1 text-xs">{s.label}</p>
                   <div className="flex items-center gap-2">
                     <code className="selectable min-w-0 flex-1 break-all rounded-[3px] bg-bg px-1.5 py-1 font-mono text-xs">{s.command}</code>
                     <Button size="sm" onClick={() => insertIntoActive(s.command)}>
-                      <ClipboardPaste size={12} /> Insert
+                      <ClipboardPaste size={12} /> Insérer
                     </Button>
                   </div>
                   {s.note && <p className="mt-1 text-xs text-muted">{s.note}</p>}
@@ -204,49 +212,50 @@ export function NewProjectDialog({ onClose }: { onClose: () => void }) {
 
   return (
     <Modal
-      title="New project from template"
+      title="Nouveau projet"
+      description="Un dossier prêt à l'emploi, créé à partir d'un modèle."
       onClose={onClose}
       width="max-w-xl"
       footer={
         <>
-          <Button onClick={onClose}>Cancel</Button>
+          <Button variant="ghost" onClick={onClose}>Annuler</Button>
           <Button variant="primary" disabled={!name || !!nameError || !parent || busy} onClick={() => void create(false)}>
-            {busy && <LoaderCircle size={13} className="animate-spin" />} Create project
+            {busy && <LoaderCircle size={13} className="animate-spin" />} Créer le projet
           </Button>
         </>
       }
     >
       <div className="space-y-3">
         <fieldset>
-          <legend className="mb-1 text-xs font-medium text-muted">Template</legend>
+          <legend className="mb-1.5 text-[12px] font-medium text-fg2">Modèle</legend>
           <div className="grid grid-cols-2 gap-2">
             {templates.map((t) => (
               <label
                 key={t.id}
                 className={cn(
-                  "cursor-pointer rounded-[var(--radius-sm)] border p-2 has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-accent2",
-                  template === t.id ? "border-accent bg-hover" : "border-line hover:bg-hover",
+                  "cursor-pointer rounded-[var(--radius-sm)] border p-2 has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-accent",
+                  template === t.id ? "border-accent bg-active" : "border-line hover:bg-hover",
                 )}
               >
                 <input type="radio" name="template" value={t.id} checked={template === t.id} onChange={() => setTemplate(t.id)} className="sr-only" />
-                <span className="block text-[13px] font-medium">{t.label}</span>
-                <span className="block text-xs text-muted">{t.description}</span>
+                <span className="block text-[13px] font-medium text-fg">{TEMPLATE_FR[t.id]?.label ?? t.label}</span>
+                <span className="block text-[12px] text-muted">{TEMPLATE_FR[t.id]?.description ?? t.description}</span>
                 <span className="mt-1 block truncate font-mono text-[11px] text-muted">{t.files.join("  ")}</span>
               </label>
             ))}
           </div>
         </fieldset>
 
-        <Field label="Project name" error={nameError} hint="Letters, digits, '.', '_' and '-'.">
+        <Field label="Nom du projet" error={nameError} hint="Lettres, chiffres, « . », « _ » et « - ».">
           {(id) => <TextInput id={id} data-autofocus value={name} onChange={(e) => setName(e.target.value)} aria-invalid={!!nameError} />}
         </Field>
 
-        <Field label="Location">
+        <Field label="Emplacement">
           {(id) => (
             <div className="flex items-center gap-2">
-              <TextInput id={id} readOnly value={parent ? locationDisplay(parent) : "Choose a folder..."} className="font-mono text-xs" />
+              <TextInput id={id} readOnly value={parent ? locationDisplay(parent) : "Choisissez un dossier…"} className="font-mono text-xs" />
               <Button onClick={() => setPicking(true)}>
-                <FolderOpen size={13} /> Browse...
+                <FolderOpen size={13} /> Parcourir…
               </Button>
             </div>
           )}
@@ -255,8 +264,8 @@ export function NewProjectDialog({ onClose }: { onClose: () => void }) {
         {warnMounted && (
           <p className="flex items-start gap-2 rounded-[var(--radius-sm)] border border-warn/40 p-2 text-xs text-warn">
             <TriangleAlert size={14} className="mt-px shrink-0" />
-            This location is on the Windows filesystem. Linux tools run noticeably slower there. For Python, C/C++ or OpenCV work,
-            choose a folder under your Linux home directory.
+            Cet emplacement est sur le système de fichiers Windows : les outils Linux y sont nettement plus lents. Pour Python, C/C++ ou
+            OpenCV, choisissez plutôt un dossier dans votre dossier personnel Linux.
           </p>
         )}
 
@@ -266,12 +275,12 @@ export function NewProjectDialog({ onClose }: { onClose: () => void }) {
               checked={venv && canVenv}
               disabled={!canVenv}
               onChange={setVenv}
-              label="Create a virtual environment (.venv)"
-              description={canVenv ? "Runs in the distribution after the files are written." : "Available for projects inside a WSL distribution."}
+              label="Créer un environnement virtuel (.venv)"
+              description={canVenv ? "Créé dans la distribution après l'écriture des fichiers." : "Disponible pour les projets situés dans une distribution WSL."}
             />
             {venv && canVenv && (
               <p className="font-mono text-xs text-muted">
-                Command: <span className="text-fg">python3 -m venv .venv</span>
+                Commande : <span className="text-fg">python3 -m venv .venv</span>
               </p>
             )}
           </div>
@@ -279,7 +288,7 @@ export function NewProjectDialog({ onClose }: { onClose: () => void }) {
 
         {selected && selected.id === "cpp" && (
           <p className="text-xs text-muted">
-            The build step is offered after creation only if a compiler and CMake are installed in the distribution.
+            La compilation n'est proposée après la création que si un compilateur et CMake sont installés dans la distribution.
           </p>
         )}
         {error && (
@@ -287,7 +296,7 @@ export function NewProjectDialog({ onClose }: { onClose: () => void }) {
             {error}
           </p>
         )}
-        <Badge>{selected ? `${selected.files.length} files` : "Loading templates..."}</Badge>
+        <Badge>{selected ? `${selected.files.length} fichiers` : "Chargement des modèles…"}</Badge>
       </div>
     </Modal>
   );

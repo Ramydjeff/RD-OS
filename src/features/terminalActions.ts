@@ -35,7 +35,7 @@ export async function openTerminal(opts: OpenOptions = {}): Promise<string | nul
   let status = useWsl.getState().status;
   if (!status) status = await useWsl.getState().refresh();
   if (!status || !status.available || status.distros.length === 0) {
-    toast("error", status?.problem?.message ?? useWsl.getState().error ?? "WSL is not available.");
+    toast("error", status?.problem?.message ?? useWsl.getState().error ?? "WSL n'est pas disponible.");
     useWorkspace.getState().setView("environments");
     return null;
   }
@@ -45,12 +45,12 @@ export async function openTerminal(opts: OpenOptions = {}): Promise<string | nul
   const cwd = opts.cwd !== undefined ? opts.cwd : (ws.project ?? settings.defaultProjectDir ?? null);
   const distro = opts.distro ?? (cwd?.kind === "linux" ? cwd.distro : chooseDistro(status));
   if (!distro) {
-    toast("error", "No usable WSL distribution was found. Install one from the Environments view.");
+    toast("error", "Aucune distribution WSL utilisable. Installez-en une depuis la vue Environnements.");
     ws.setView("environments");
     return null;
   }
   const info = status.distros.find((d) => d.name === distro);
-  if (info && !info.running) toast("info", `Starting ${distro}...`);
+  if (info && !info.running) toast("info", `Démarrage de ${distro}…`);
 
   const terminalId = crypto.randomUUID();
   createController(terminalId, { distro, cwd });
@@ -86,12 +86,12 @@ export async function confirmClosing(terminalIds: string[], what: string): Promi
   const jobs = [...new Set(busy.flatMap((c) => c.jobs))];
   const message =
     busy.length > 0
-      ? `${what} still has running processes${jobs.length ? ` (${jobs.slice(0, 6).join(", ")})` : ""}. They will be stopped and unsaved work in them is lost.`
-      : `${what} may still have running processes; this could not be verified.`;
+      ? `${what} exécute encore des processus${jobs.length ? ` (${jobs.slice(0, 6).join(", ")})` : ""}. Ils seront arrêtés et le travail non enregistré sera perdu.`
+      : `${what} exécute peut-être encore des processus : impossible de le vérifier.`;
   return confirmDialog({
-    title: "End this terminal session?",
+    title: "Fermer cette session de terminal ?",
     message,
-    confirmLabel: "End session",
+    confirmLabel: "Fermer la session",
     danger: true,
   });
 }
@@ -100,7 +100,7 @@ export async function closePane(tabId: string, paneId: string): Promise<void> {
   const tab = useTerminals.getState().tabs.find((t) => t.id === tabId);
   const leaf = tab && collectLeaves(tab.root).find((l) => l.id === paneId);
   if (!tab || !leaf) return;
-  if (!(await confirmClosing([leaf.terminalId], "This terminal"))) return;
+  if (!(await confirmClosing([leaf.terminalId], "Ce terminal"))) return;
   useTerminals.getState().removePane(tabId, paneId);
   await destroyController(leaf.terminalId);
 }
@@ -114,7 +114,7 @@ export async function closeTab(tabId: string): Promise<void> {
   const tab = useTerminals.getState().tabs.find((t) => t.id === tabId);
   if (!tab) return;
   const leaves = collectLeaves(tab.root);
-  const label = leaves.length > 1 ? "This tab" : "This terminal";
+  const label = leaves.length > 1 ? "Cet onglet" : "Ce terminal";
   if (!(await confirmClosing(leaves.map((l) => l.terminalId), label))) return;
   for (const l of leaves) useTerminals.getState().removePane(tabId, l.id);
   await Promise.all(leaves.map((l) => destroyController(l.terminalId)));
@@ -123,7 +123,7 @@ export async function closeTab(tabId: string): Promise<void> {
 export async function restartTerminal(terminalId: string): Promise<void> {
   const c = getController(terminalId);
   if (!c) return;
-  if (c.meta.state === "running" && !(await confirmClosing([terminalId], "This terminal"))) return;
+  if (c.meta.state === "running" && !(await confirmClosing([terminalId], "Ce terminal"))) return;
   await c.restart();
   focusSoon(terminalId);
 }
@@ -131,7 +131,7 @@ export async function restartTerminal(terminalId: string): Promise<void> {
 export async function terminateTerminal(terminalId: string): Promise<void> {
   const c = getController(terminalId);
   if (!c || c.meta.state !== "running") return;
-  if (!(await confirmClosing([terminalId], "This terminal"))) return;
+  if (!(await confirmClosing([terminalId], "Ce terminal"))) return;
   await c.terminate();
 }
 
@@ -156,7 +156,7 @@ export function openSearch(): void {
 export function insertIntoActive(text: string): boolean {
   const c = activeController();
   if (!c || c.meta.state !== "running") {
-    toast("error", "Open a running terminal first.");
+    toast("error", "Ouvrez d'abord un terminal.");
     return false;
   }
   c.insertText(text);
@@ -171,6 +171,6 @@ export async function shutdownTerminals(): Promise<void> {
 
 export async function reportError(context: string, e: unknown): Promise<void> {
   const message = errorMessage(e);
-  toast("error", `${context}: ${message}`);
+  toast("error", `${context} : ${message}`);
   void ipc.log("error", "ui", `${context}: ${message}`);
 }

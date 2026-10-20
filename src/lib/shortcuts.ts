@@ -16,15 +16,15 @@ export interface ShortcutDef {
 }
 
 export const DEFAULT_SHORTCUTS: ShortcutDef[] = [
-  { id: "terminal.new", label: "New terminal", keys: "Ctrl+Shift+T" },
-  { id: "terminal.close", label: "Close active terminal", keys: "Ctrl+Shift+W" },
-  { id: "terminal.search", label: "Search terminal output", keys: "Ctrl+F" },
-  { id: "terminal.clear", label: "Clear visible terminal", keys: "Ctrl+Shift+K" },
-  { id: "view.toggleSidebar", label: "Toggle sidebar", keys: "Ctrl+B" },
-  { id: "view.togglePanel", label: "Toggle terminal panel", keys: "Ctrl+Backquote" },
-  { id: "view.maximizePanel", label: "Maximize terminal panel", keys: "Ctrl+Shift+M" },
-  { id: "palette.open", label: "Command palette", keys: "Ctrl+Shift+P" },
-  { id: "settings.open", label: "Open settings", keys: "Ctrl+Comma" },
+  { id: "terminal.new", label: "Nouveau terminal", keys: "Ctrl+Shift+T" },
+  { id: "terminal.close", label: "Fermer le terminal actif", keys: "Ctrl+Shift+W" },
+  { id: "terminal.search", label: "Rechercher dans le terminal", keys: "Ctrl+F" },
+  { id: "terminal.clear", label: "Effacer le terminal", keys: "Ctrl+Shift+K" },
+  { id: "view.toggleSidebar", label: "Afficher / masquer la barre latérale", keys: "Ctrl+B" },
+  { id: "view.togglePanel", label: "Afficher / masquer le terminal", keys: "Ctrl+Backquote" },
+  { id: "view.maximizePanel", label: "Agrandir le terminal", keys: "Ctrl+Shift+M" },
+  { id: "palette.open", label: "Palette de commandes", keys: "Ctrl+Shift+P" },
+  { id: "settings.open", label: "Paramètres", keys: "Ctrl+Comma" },
 ];
 
 export interface Chord {
@@ -84,14 +84,18 @@ export function chordEquals(a: Chord, b: Chord): boolean {
 
 const KEY_LABELS: Record<string, string> = {
   Comma: ",", Period: ".", Slash: "/", Backslash: "\\", Semicolon: ";", Quote: "'", BracketLeft: "[",
-  BracketRight: "]", Minus: "-", Equal: "=", Backquote: "`", ArrowUp: "Up", ArrowDown: "Down", ArrowLeft: "Left",
-  ArrowRight: "Right", Escape: "Esc",
+  BracketRight: "]", Minus: "-", Equal: "=", Backquote: "`", ArrowUp: "↑", ArrowDown: "↓", ArrowLeft: "←",
+  ArrowRight: "→", Escape: "Échap", Delete: "Suppr", Space: "Espace", Enter: "Entrée",
 };
 
+/** Modifier names as printed on French keyboards. */
+const MOD_LABELS: Record<(typeof MODIFIER_ORDER)[number], string> = { Ctrl: "Ctrl", Shift: "Maj", Alt: "Alt", Meta: "Win" };
+
+/** Display form of a shortcut (French key names); the stored form is unchanged. */
 export function formatShortcut(s: string): string {
   const c = parseShortcut(s);
   if (!c) return s;
-  const mods = MODIFIER_ORDER.filter((m) => c[m.toLowerCase() as "ctrl" | "shift" | "alt" | "meta"]);
+  const mods = MODIFIER_ORDER.filter((m) => c[m.toLowerCase() as "ctrl" | "shift" | "alt" | "meta"]).map((m) => MOD_LABELS[m]);
   return [...mods, KEY_LABELS[c.key] ?? c.key].join("+");
 }
 
